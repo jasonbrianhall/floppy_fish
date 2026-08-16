@@ -90,6 +90,37 @@ static void audio_play_score() {
     audio_play_notes(freqs, durs, 2, 0.30);
 }
 
+static void audio_play_dead() {
+    // 1. Sharp watery impact (fast upward blip)
+    audio_play_sweep(300.0, 520.0, 0.03, 0.40);
+
+    // 2. Droplet scatter (three tiny jitter sweeps)
+    for (int i = 0; i < 3; i++) {
+        double start = 600.0 + (rand() % 200);   // 600–800 Hz
+        double end   = 350.0 + (rand() % 150);   // 350–500 Hz
+        audio_play_sweep(start, end, 0.02, 0.35);
+    }
+
+    // 3. Heavy wet flop (slow downward bend)
+    audio_play_sweep(480.0, 160.0, 0.12, 0.45);
+}
+
+/*
+// A short, squishy "thud" when the floppy fish dies.
+static void audio_play_dead() {
+    // Fake "noise" by jittering a few tiny sweeps
+    for (int i = 0; i < 3; i++) {
+        double start = 300.0 + (rand() % 80);   // 300–380 Hz
+        double end   = 180.0 + (rand() % 60);   // 180–240 Hz
+        audio_play_sweep(start, end, 0.03, 0.30);
+    }
+
+    // Add the downward "deflated flop"
+    audio_play_sweep(420.0, 180.0, 0.10, 0.30);
+}*/
+
+
+
 // Largest centered GAME_W x GAME_H rect (scaled uniformly) that fits inside
 // a win_w x win_h window, i.e. classic letterbox/pillarbox fit.
 static SDL_Rect compute_dest_rect(int win_w, int win_h) {
@@ -163,6 +194,7 @@ int main(int argc, char **argv) {
                 SDL_SetWindowFullscreen(window, is_fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
             } else if (e.type == SDL_MOUSEBUTTONDOWN && e.button.button == SDL_BUTTON_LEFT) {
                 vis.mouse_left_pressed = true;
+                vis.deadcounter=0;
             } else if (e.type == SDL_WINDOWEVENT && e.window.event == SDL_WINDOWEVENT_SIZE_CHANGED) {
                 // Only the letterbox rect changes here - the game's own
                 // canvas (GAME_W x GAME_H) and simulation state are untouched.
@@ -181,6 +213,7 @@ int main(int argc, char **argv) {
         if (is_floppy_fish_sound)  {
             if (vis.sound_flap) audio_play_flap();
             if (vis.sound_score) audio_play_score();
+            if (vis.sound_dead) audio_play_dead();
         }
         cairo_t *cr = cairo_create(surface);
         draw_floppy_fish(&vis, cr);

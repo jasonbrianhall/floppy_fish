@@ -23,6 +23,8 @@ typedef struct {
     bool mouse_left_pressed; // host sets true on click; game clears it after handling
     bool sound_flap;         // game sets true the frame the fish flaps; host plays a sound and it self-clears next frame
     bool sound_score;        // game sets true the frame a point is scored; same contract
+    bool sound_dead;         // Floppy fish is dead
+    int deadcounter;
 } Visualizer;
 
 void init_floppy_fish_system(Visualizer *vis);
