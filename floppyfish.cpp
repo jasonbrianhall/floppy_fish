@@ -492,10 +492,12 @@ void update_floppy_fish(Visualizer *vis, double dt) {
         s_ff_fish_y = fish_radius;
         if (s_ff_fish_vel < 0) s_ff_fish_vel = 0.0;
     }
+#ifdef FLOPPYSOUND
     if(s_ff_state==FF_GAME_OVER) {
         if(vis->deadcounter<2) vis->deadcounter++;
         if(vis->deadcounter==1) vis->sound_dead=true;
     }
+#endif
 }
 
 static void ff_draw_fish(cairo_t *cr, double x, double y, double radius, double rotation,
@@ -1541,7 +1543,7 @@ void draw_floppy_fish(Visualizer *vis, cairo_t *cr) {
         cairo_show_text(cr, msg);
 
         cairo_set_font_size(cr, h * 0.032);
-        char best_text[32];
+        char best_text[50];
         snprintf(best_text, sizeof(best_text), "Best: %d", s_ff_best_score);
         cairo_text_extents(cr, best_text, &ext);
         cairo_move_to(cr, w * 0.5 - ext.width * 0.5, h * 0.52);
