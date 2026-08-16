@@ -1475,12 +1475,39 @@ void draw_floppy_fish(Visualizer *vis, cairo_t *cr) {
     cairo_show_text(cr, score_text);
 
     if (s_ff_state == FF_READY) {
+        // Welcome to Floppy Fish
         cairo_set_source_rgba(cr, 1.0, 1.0, 1.0, 0.95);
         cairo_set_font_size(cr, h * 0.045);
-        const char *msg = "Click to Start";
+        const char *msg = "Welcome to Floppy Fish";
         cairo_text_extents(cr, msg, &ext);
         cairo_move_to(cr, w * 0.5 - ext.width * 0.5, h * 0.62);
         cairo_show_text(cr, msg);
+
+        // Click to Start Text
+        cairo_set_source_rgba(cr, 1.0, 0.0, 0.0, 0.95);
+        const char *msg2 = "Click to Start";
+        cairo_text_extents(cr, msg2, &ext);
+        cairo_move_to(cr, w * 0.5 - ext.width * 0.5, h * 0.68);
+        cairo_show_text(cr, msg2);
+
+        // Help Text
+        cairo_set_source_rgba(cr, 1.0, 0.0, 0.0, 0.95);
+        cairo_set_font_size(cr, h * 0.02);
+        const char *msg3 = "Press F11 to Toggle Fullscreen or S to toggle sound";
+        cairo_text_extents(cr, msg3, &ext);
+        cairo_move_to(cr, w * 0.5 - ext.width * 0.5, h * 0.74);
+        cairo_show_text(cr, msg3);
+
+        // Help Text
+        cairo_set_source_rgba(cr, 1.0, 0.0, 0.0, 0.95);
+        cairo_set_font_size(cr, h * 0.02);
+        const char *msg4 = "Keep Clicking to Swim Up and Avoid Obstacles; Not Clicking causes Floppy Fish to Sink";
+        cairo_text_extents(cr, msg4, &ext);
+        cairo_move_to(cr, w * 0.5 - ext.width * 0.5, h * 0.78);
+        cairo_show_text(cr, msg4);
+
+
+
     } else if (s_ff_state == FF_GAME_OVER) {
         cairo_set_source_rgba(cr, 0.0, 0.0, 0.0, 0.45);
         cairo_rectangle(cr, w * 0.12, h * 0.35, w * 0.76, h * 0.24);
@@ -1495,7 +1522,7 @@ void draw_floppy_fish(Visualizer *vis, cairo_t *cr) {
 
         cairo_set_font_size(cr, h * 0.032);
         char best_text[32];
-        snprintf(best_text, sizeof(best_text), "Best: %d   Click to Restart", s_ff_best_score);
+        snprintf(best_text, sizeof(best_text), "Best: %d\nClick to Restart", s_ff_best_score);
         cairo_text_extents(cr, best_text, &ext);
         cairo_move_to(cr, w * 0.5 - ext.width * 0.5, h * 0.52);
         cairo_show_text(cr, best_text);
