@@ -6,7 +6,7 @@
 #include <ctime>
 #include <cmath>
 #include <vector>
-#include "ff_env.h"
+#include "visualization.h"
 
 // The game is simulated and drawn at a fixed internal resolution, then
 // scaled as a whole onto the actual window. This is what keeps a 16:9
@@ -139,7 +139,7 @@ int main(int argc, char **argv) {
     int win_w = INIT_WIN_W, win_h = INIT_WIN_H;
     SDL_GetWindowSize(window, &win_w, &win_h);
     bool is_fullscreen = true;
-
+    bool is_floppy_fish_sound = true;
     Visualizer vis = {};
     vis.width = GAME_W;
     vis.height = GAME_H;
@@ -156,6 +156,8 @@ int main(int argc, char **argv) {
                 running = false;
             } else if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_ESCAPE) {
                 running = false;
+            } else if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_s) {
+                is_floppy_fish_sound = !is_floppy_fish_sound ;
             } else if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_F11) {
                 is_fullscreen = !is_fullscreen;
                 SDL_SetWindowFullscreen(window, is_fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
@@ -176,9 +178,10 @@ int main(int argc, char **argv) {
 
         vis.time_offset += dt;
         update_floppy_fish(&vis, dt);
-        if (vis.sound_flap) audio_play_flap();
-        if (vis.sound_score) audio_play_score();
-
+        if (is_floppy_fish_sound)  {
+            if (vis.sound_flap) audio_play_flap();
+            if (vis.sound_score) audio_play_score();
+        }
         cairo_t *cr = cairo_create(surface);
         draw_floppy_fish(&vis, cr);
         cairo_destroy(cr);

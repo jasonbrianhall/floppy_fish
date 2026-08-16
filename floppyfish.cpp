@@ -1,4 +1,4 @@
-#include "ff_env.h"
+#include "visualization.h"
 #include <stdlib.h>
 
 // ---- Flappy Fish ----
