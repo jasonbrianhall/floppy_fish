@@ -283,7 +283,9 @@ void init_floppy_fish_system(Visualizer *vis) {
 
 static void ff_flap(Visualizer *vis) {
     s_ff_fish_vel = -vis->height * 0.62;
+#ifdef FLOPPYSOUND
     vis->sound_flap = true;
+#endif
 }
 
 static void ff_spawn_pipe(Visualizer *vis) {
@@ -320,9 +322,10 @@ void update_floppy_fish(Visualizer *vis, double dt) {
 
     // One-shot per-frame event flags for the host to pick up right after
     // this call returns - reset here so each flap/score is a single pulse.
+#ifdef FLOPPYSOUND
     vis->sound_flap = false;
     vis->sound_score = false;
-
+#endif
     ff_init_background(vis);
     s_ff_bubble_phase += dt;
 
@@ -445,7 +448,9 @@ void update_floppy_fish(Visualizer *vis, double dt) {
                 s_ff_pipes[i].scored = true;
                 s_ff_score++;
                 if (s_ff_score > s_ff_best_score) s_ff_best_score = s_ff_score;
+#ifdef FLOPPYSOUND
                 vis->sound_score = true;
+#endif
             }
 
             // Circle-vs-rect collision against the top and bottom coral
@@ -1484,11 +1489,13 @@ void draw_floppy_fish(Visualizer *vis, cairo_t *cr) {
         cairo_show_text(cr, msg);
 
         // Help Text
+#ifdef FLOPPYSOUND
         cairo_set_font_size(cr, h * 0.02);
         const char *msg3 = "Press F11 to Toggle Fullscreen or S to toggle sound";
         cairo_text_extents(cr, msg3, &ext);
         cairo_move_to(cr, w * 0.5 - ext.width * 0.5, h * 0.74);
         cairo_show_text(cr, msg3);
+#endif
 
         cairo_set_font_size(cr, h * 0.02);
         const char *msg4 = "Keep Clicking to Swim Up and Avoid Obstacles; Not Clicking causes Floppy Fish to Sink";
