@@ -31,21 +31,43 @@ typedef enum { FF_THEME_REEF = 0, FF_THEME_SHIP = 1, FF_THEME_CAVE = 2, FF_THEME
 
 static double s_ff_world_x = 0.0;
 
+// Which theme each zone index uses, generated lazily (and randomly) the
+// first time each index is reached rather than fixed in advance, then
+// cached forever after so revisiting the same index is stable. Wraps after
+// FF_ZONE_CACHE_MAX zones (~4 hours of continuous play at the default zone
+// length) and just reuses the same random order from there rather than
+// growing unboundedly.
+#define FF_ZONE_CACHE_MAX 256
+static int s_ff_zone_themes[FF_ZONE_CACHE_MAX];
+static int s_ff_zone_cache_count = 0;
+
+static int ff_zone_theme(int idx) {
+    int slot = ((idx % FF_ZONE_CACHE_MAX) + FF_ZONE_CACHE_MAX) % FF_ZONE_CACHE_MAX;
+    while (s_ff_zone_cache_count <= slot) {
+        int prev = (s_ff_zone_cache_count > 0) ? s_ff_zone_themes[s_ff_zone_cache_count - 1] : -1;
+        int pick;
+        do {
+            pick = rand() % FF_THEME_COUNT;
+        } while (pick == prev); // never the same theme twice in a row
+        s_ff_zone_themes[s_ff_zone_cache_count] = pick;
+        s_ff_zone_cache_count++;
+    }
+    return s_ff_zone_themes[slot];
+}
+
 // Works out which theme "zone" a world-scroll position falls in, the next
 // theme it's approaching, and how far into the crossfade band toward it
 // this position is (0 = fully theme_from, 1 = fully theme_to). Shared by
 // the background crossfade in draw_floppy_fish and by ff_spawn_pipe (to
-// decide what a newly-born obstacle looks like).
+// decide what a newly-born obstacle looks like). The zone *order* is
+// randomized (see ff_zone_theme) - only each zone's own length is fixed.
 static void ff_theme_at(double world_x, double zone_len, double trans_len,
                          int *theme_from, int *theme_to, double *blend_t) {
-    double cycle = zone_len * FF_THEME_COUNT;
-    double pos = fmod(world_x, cycle);
-    if (pos < 0) pos += cycle;
-    int idx = (int)(pos / zone_len);
-    if (idx >= FF_THEME_COUNT) idx = FF_THEME_COUNT - 1;
-    double pos_in_zone = pos - idx * zone_len;
-    *theme_from = idx;
-    *theme_to = (idx + 1) % FF_THEME_COUNT;
+    if (world_x < 0) world_x = 0;
+    int idx = (int)floor(world_x / zone_len);
+    double pos_in_zone = world_x - idx * zone_len;
+    *theme_from = ff_zone_theme(idx);
+    *theme_to = ff_zone_theme(idx + 1);
     *blend_t = (pos_in_zone > zone_len - trans_len)
                    ? (pos_in_zone - (zone_len - trans_len)) / trans_len
                    : 0.0;
@@ -144,6 +166,7 @@ static void ff_reset(Visualizer *vis) {
     s_ff_score = 0;
     s_ff_spawn_timer = 0.0;
     s_ff_world_x = 0.0;
+    s_ff_zone_cache_count = 0;
     s_ff_fish_palette = rand() % FF_FISH_PALETTE_COUNT;
     for (int i = 0; i < FF_MAX_PIPES; i++) s_ff_pipes[i].active = false;
 }
@@ -260,6 +283,7 @@ void init_floppy_fish_system(Visualizer *vis) {
 
 static void ff_flap(Visualizer *vis) {
     s_ff_fish_vel = -vis->height * 0.62;
+    vis->sound_flap = true;
 }
 
 static void ff_spawn_pipe(Visualizer *vis) {
@@ -293,6 +317,11 @@ static void ff_spawn_pipe(Visualizer *vis) {
 
 void update_floppy_fish(Visualizer *vis, double dt) {
     if (vis->width <= 0 || vis->height <= 0) return;
+
+    // One-shot per-frame event flags for the host to pick up right after
+    // this call returns - reset here so each flap/score is a single pulse.
+    vis->sound_flap = false;
+    vis->sound_score = false;
 
     ff_init_background(vis);
     s_ff_bubble_phase += dt;
@@ -416,6 +445,7 @@ void update_floppy_fish(Visualizer *vis, double dt) {
                 s_ff_pipes[i].scored = true;
                 s_ff_score++;
                 if (s_ff_score > s_ff_best_score) s_ff_best_score = s_ff_score;
+                vis->sound_score = true;
             }
 
             // Circle-vs-rect collision against the top and bottom coral
