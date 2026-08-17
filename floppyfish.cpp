@@ -455,6 +455,9 @@ static void ff_save_daily_best(void) {
 #endif // FLOPPYSOUND
 static double s_ff_bubble_phase = 0.0;
 static double s_ff_flap_anim = 0.0;  // tail-flap animation clock, ticks while playing
+static double s_ff_blink_timer = 1.5;     // counts down to the next blink, reseeded randomly each time
+static double s_ff_blink_progress = 0.0;  // 0 = eye open, 1 = eye fully shut, drives the blink itself
+static bool s_ff_blink_closing = false;   // true while mid-blink (closing then opening)
 static int s_ff_fish_palette = 0;    // random new color friend each game
 
 // Cached toy font face for the UI text - created once on first use, freed
@@ -794,6 +797,26 @@ void update_floppy_fish(Visualizer *vis, double dt) {
     ff_init_background(vis);
     s_ff_bubble_phase += dt;
 
+    // Occasional blink, independent of game state so it keeps happening on
+    // the ready screen and after game-over too.
+    const double FF_BLINK_SPEED = 12.0; // full close+open cycle takes ~1/6s
+    if (s_ff_blink_closing) {
+        s_ff_blink_progress += dt * FF_BLINK_SPEED;
+        if (s_ff_blink_progress >= 1.0) {
+            s_ff_blink_progress = 1.0;
+            s_ff_blink_closing = false; // now opening back up
+        }
+    } else if (s_ff_blink_progress > 0.0) {
+        s_ff_blink_progress -= dt * FF_BLINK_SPEED;
+        if (s_ff_blink_progress <= 0.0) s_ff_blink_progress = 0.0;
+    } else {
+        s_ff_blink_timer -= dt;
+        if (s_ff_blink_timer <= 0.0) {
+            s_ff_blink_closing = true;
+            s_ff_blink_timer = 2.0 + (rand() % 1000) / 1000.0 * 3.0; // next blink in 2-5s
+        }
+    }
+
     // Background critters dart around independently of the player fish.
     double band_lo = vis->height * 0.08, band_hi = vis->height * 0.72;
     for (int i = 0; i < FF_BG_FISH_COUNT; i++) {
@@ -1016,7 +1039,8 @@ void update_floppy_fish(Visualizer *vis, double dt) {
 }
 
 static void ff_draw_fish(cairo_t *cr, double x, double y, double radius, double rotation,
-                          double flap_phase, const FFFishPalette *pal, double alpha) {
+                          double flap_phase, const FFFishPalette *pal, double alpha,
+                          double blink_amount) {
     cairo_save(cr);
     cairo_translate(cr, x, y);
     cairo_rotate(cr, rotation);
@@ -1062,13 +1086,21 @@ static void ff_draw_fish(cairo_t *cr, double x, double y, double radius, double 
     cairo_restore(cr);
     cairo_fill(cr);
 
-    // Eye
+    // Eye - vertically squashed toward closed as blink_amount goes 0 -> 1,
+    // so it reads as an eyelid closing over the eye rather than the eye
+    // just vanishing.
+    double eye_scale_y = 1.0 - 0.92 * blink_amount;
+    if (eye_scale_y < 0.08) eye_scale_y = 0.08;
+    cairo_save(cr);
+    cairo_translate(cr, radius * 0.75, -radius * 0.15);
+    cairo_scale(cr, 1.0, eye_scale_y);
     cairo_set_source_rgba(cr, 1.0, 1.0, 1.0, alpha);
-    cairo_arc(cr, radius * 0.75, -radius * 0.15, radius * 0.28, 0, 2 * M_PI);
+    cairo_arc(cr, 0, 0, radius * 0.28, 0, 2 * M_PI);
     cairo_fill(cr);
     cairo_set_source_rgba(cr, 0.05, 0.05, 0.05, alpha);
-    cairo_arc(cr, radius * 0.85, -radius * 0.15, radius * 0.14, 0, 2 * M_PI);
+    cairo_arc(cr, radius * 0.10, 0, radius * 0.14, 0, 2 * M_PI);
     cairo_fill(cr);
+    cairo_restore(cr);
 
     cairo_restore(cr);
 }
@@ -1426,7 +1458,7 @@ void draw_floppy_fish(Visualizer *vis, cairo_t *cr) {
 
     // Fish
     ff_draw_fish(cr, fish_x, s_ff_fish_y, fish_radius, s_ff_rotation, s_ff_flap_anim,
-                 &FF_FISH_PALETTES[s_ff_fish_palette], 1.0);
+                 &FF_FISH_PALETTES[s_ff_fish_palette], 1.0, s_ff_blink_progress);
 
     // Score
     cairo_set_source_rgba(cr, 0, 0, 0, 0.35);
