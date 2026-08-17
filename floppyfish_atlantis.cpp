@@ -83,11 +83,22 @@ void ff_draw_atlantis_backdrop(cairo_t *cr, double w, double h, double base_y) {
 
 // Mosaic tile floor - alternating teal/gold tiles with glowing seams,
 // scattered with a few loose gems instead of the ship theme's coins.
-void ff_draw_atlantis_floor(cairo_t *cr, double w, double h, double floor_h, double bubble_phase) {
+// Static: just the base fill - the one part big enough (a full-width
+// rectangle) to be worth caching. Everything else below has to stay in the
+// live pass so it keeps drawing on top of it in the original order.
+void ff_draw_atlantis_floor_static(cairo_t *cr, double w, double h, double floor_h) {
     cairo_set_source_rgb(cr, 0.14, 0.22, 0.28);
     cairo_rectangle(cr, 0, h - floor_h, w, floor_h);
     cairo_fill(cr);
+}
 
+// Scroll (really "everything drawn live on top of the cached fill"): the
+// mosaic tiles that actually scroll with bubble_phase, plus the baseline
+// seam and gem scatter - kept here rather than in the static cache so they
+// still land on top of the tiles each frame, same as the original
+// single-function draw order. All of this is cheap, so redrawing it live
+// costs nothing worth caching.
+void ff_draw_atlantis_floor_scroll(cairo_t *cr, double w, double h, double floor_h, double bubble_phase) {
     double tile = floor_h * 0.6;
     double scroll = fmod(bubble_phase * (h * 0.04), tile * 2.0);
     for (double x = -tile * 2.0 - scroll; x < w + tile; x += tile) {

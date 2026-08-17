@@ -97,10 +97,22 @@ void ff_draw_ship_backdrop(cairo_t *cr, double w, double h, double base_y) {
     }
 }
 
-void ff_draw_ship_floor(cairo_t *cr, double w, double h, double floor_h, double bubble_phase) {
+// Static: just the base deck fill - the one part big enough (a full-width
+// rectangle) to be worth caching. Everything else below has to stay in the
+// live pass so it keeps drawing on top of it in the original order.
+void ff_draw_ship_floor_static(cairo_t *cr, double w, double h, double floor_h) {
     cairo_set_source_rgb(cr, 0.42, 0.28, 0.16);
     cairo_rectangle(cr, 0, h - floor_h, w, floor_h);
     cairo_fill(cr);
+}
+
+// Scroll (really "everything drawn live on top of the cached deck"): the
+// plank seams that actually scroll with bubble_phase, plus the baseline
+// seam and coin scatter - kept here rather than in the static cache so they
+// still land on top of the planks each frame, same as the original
+// single-function draw order. All of this is cheap (a dozen strokes/arcs),
+// so redrawing it live costs nothing worth caching.
+void ff_draw_ship_floor_scroll(cairo_t *cr, double w, double h, double floor_h, double bubble_phase) {
     cairo_set_source_rgba(cr, 0.25, 0.15, 0.08, 0.7);
     cairo_set_line_width(cr, 3.0);
     for (double x = -fmod(bubble_phase * (h * 0.34), 60.0); x < w; x += 60.0) {

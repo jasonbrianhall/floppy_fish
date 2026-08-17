@@ -34,10 +34,17 @@ void ff_draw_reef_backdrop(cairo_t *cr, double w, double h, double base_y) {
     cairo_fill(cr);
 }
 
-void ff_draw_reef_floor(cairo_t *cr, double w, double h, double floor_h, double bubble_phase) {
+// Static: the sand fill itself. No bubble_phase dependency, so this is the
+// cacheable part.
+void ff_draw_reef_floor_static(cairo_t *cr, double w, double h, double floor_h) {
     cairo_set_source_rgb(cr, 0.87, 0.78, 0.55);
     cairo_rectangle(cr, 0, h - floor_h, w, floor_h);
     cairo_fill(cr);
+}
+
+// Scroll: the diagonal sand-ripple ticks, which drift with bubble_phase and
+// so need to be redrawn live every frame on top of the cached fill above.
+void ff_draw_reef_floor_scroll(cairo_t *cr, double w, double h, double floor_h, double bubble_phase) {
     cairo_set_source_rgba(cr, 0.75, 0.65, 0.35, 0.6);
     for (double x = -fmod(bubble_phase * (h * 0.34), 24.0); x < w; x += 24.0) {
         cairo_move_to(cr, x, h - floor_h);

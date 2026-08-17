@@ -182,6 +182,7 @@ int main(int argc, char **argv) {
     Uint64 last_ticks = SDL_GetPerformanceCounter();
     bool running = true;
     while (running) {
+        Uint64 frame_start = SDL_GetPerformanceCounter();
         SDL_Event e;
         while (SDL_PollEvent(&e)) {
             if (e.type == SDL_QUIT) {
@@ -249,6 +250,19 @@ int main(int argc, char **argv) {
         SDL_RenderClear(renderer);
         SDL_RenderCopy(renderer, texture, NULL, &dst);
         SDL_RenderPresent(renderer);
+
+#ifdef FLOPPYSOUND
+        // Standalone build: cap to 30fps regardless of display refresh rate
+        // (vsync alone isn't enough on high-refresh monitors) - this is a
+        // simple little game, not something that needs to peg the CPU
+        // redrawing 120+ times a second.
+        static const double FF_TARGET_FRAME_TIME = 1.0 / 30.0;
+        Uint64 frame_end = SDL_GetPerformanceCounter();
+        double frame_elapsed = (double)(frame_end - frame_start) / (double)SDL_GetPerformanceFrequency();
+        if (frame_elapsed < FF_TARGET_FRAME_TIME) {
+            SDL_Delay((Uint32)((FF_TARGET_FRAME_TIME - frame_elapsed) * 1000.0));
+        }
+#endif
     }
 
     shutdown_floppy_fish_system();

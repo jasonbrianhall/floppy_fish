@@ -465,6 +465,16 @@ static int s_ff_fish_palette = 0;    // random new color friend each game
 // leak at process exit (see draw_floppy_fish).
 static cairo_font_face_t *s_ff_font_face = NULL;
 
+// Per-theme cached renders of the parts of the sky/floor that never change
+// frame to frame (gradient + skyline backdrop; floor base fill) - see
+// ff_ensure_theme_caches. Everything that actually animates (bubbles, sand
+// ripples, etc.) still gets drawn live on top of these every frame; only
+// the expensive full-canvas painting gets reused instead of redone.
+static cairo_surface_t *s_ff_sky_cache[FF_THEME_COUNT] = {NULL, NULL, NULL, NULL};
+static cairo_surface_t *s_ff_floor_cache[FF_THEME_COUNT] = {NULL, NULL, NULL, NULL};
+static double s_ff_cache_w = -1.0, s_ff_cache_h = -1.0; // canvas size the caches above were built for
+static void ff_free_theme_caches(); // defined near draw_floppy_fish, used by shutdown below
+
 // Background critters: small fish darting by at their own pace, plus an
 // octopus, purely decorative and drawn behind the pipes so they never read
 // as obstacles (and so they visibly vanish behind a pipe as they cross it).
@@ -703,6 +713,9 @@ void shutdown_floppy_fish_system() {
         cairo_font_face_destroy(s_ff_font_face);
         s_ff_font_face = NULL;
     }
+    ff_free_theme_caches();
+    s_ff_cache_w = -1.0;
+    s_ff_cache_h = -1.0;
 }
 
 static void ff_flap(Visualizer *vis) {
@@ -1364,6 +1377,42 @@ static void ff_draw_diver(cairo_t *cr, double x, double y, double t, int dir, do
     }
 }
 
+// (Re)builds the cached static-layer surfaces for all four themes if they
+// haven't been built yet, or if the canvas size has changed since they
+// were (this file's canvas is normally a fixed GAME_W x GAME_H, but it's
+// also reused as-is by zenamp's visualizer, so this is a size check rather
+// than a one-shot flag). Cheap to call every frame once built - it's just
+// two float comparisons in the common case.
+static void ff_free_theme_caches() {
+    for (int t = 0; t < FF_THEME_COUNT; t++) {
+        if (s_ff_sky_cache[t])   { cairo_surface_destroy(s_ff_sky_cache[t]);   s_ff_sky_cache[t] = NULL; }
+        if (s_ff_floor_cache[t]) { cairo_surface_destroy(s_ff_floor_cache[t]); s_ff_floor_cache[t] = NULL; }
+    }
+}
+
+static void ff_ensure_theme_caches(double w, double h, double floor_h) {
+    if (s_ff_sky_cache[0] && w == s_ff_cache_w && h == s_ff_cache_h) return;
+    ff_free_theme_caches();
+    for (int t = 0; t < FF_THEME_COUNT; t++) {
+        cairo_surface_t *sky = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, (int)w, (int)h);
+        cairo_t *skc = cairo_create(sky);
+        ff_draw_theme_sky_static(skc, t, w, h);
+        cairo_destroy(skc);
+        s_ff_sky_cache[t] = sky;
+
+        // Floor cache only needs to be as tall as the floor band itself -
+        // painted back at the right y-offset below - so blitting it doesn't
+        // touch the ~90% of the canvas above the floor.
+        cairo_surface_t *floor = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, (int)w, (int)ceil(floor_h));
+        cairo_t *flc = cairo_create(floor);
+        ff_draw_theme_floor_static(flc, t, w, floor_h, floor_h);
+        cairo_destroy(flc);
+        s_ff_floor_cache[t] = floor;
+    }
+    s_ff_cache_w = w;
+    s_ff_cache_h = h;
+}
+
 void draw_floppy_fish(Visualizer *vis, cairo_t *cr) {
     if (vis->width <= 0 || vis->height <= 0) return;
 
@@ -1385,12 +1434,20 @@ void draw_floppy_fish(Visualizer *vis, cairo_t *cr) {
     ff_theme_at(s_ff_world_x, zone_len, trans_len, &theme_from, &theme_to, &blend_t);
     double base_y = h - floor_h;
 
+    ff_ensure_theme_caches(w, h, floor_h);
+
     // Sky/backdrop, crossfaded as a single composited layer so its internal
     // bubbles/skyline never double-blend against each other mid-transition.
-    ff_draw_theme_sky(cr, theme_from, w, h, s_ff_bubble_phase);
+    // The gradient+skyline part comes from the per-theme cache built above
+    // (a cheap blit); only the bubbles are actually redrawn live.
+    cairo_set_source_surface(cr, s_ff_sky_cache[theme_from], 0, 0);
+    cairo_paint(cr);
+    ff_draw_theme_particles(cr, theme_from, w, h, s_ff_bubble_phase);
     if (blend_t > 0.0) {
         cairo_push_group(cr);
-        ff_draw_theme_sky(cr, theme_to, w, h, s_ff_bubble_phase);
+        cairo_set_source_surface(cr, s_ff_sky_cache[theme_to], 0, 0);
+        cairo_paint(cr);
+        ff_draw_theme_particles(cr, theme_to, w, h, s_ff_bubble_phase);
         cairo_pop_group_to_source(cr);
         cairo_paint_with_alpha(cr, blend_t);
     }
@@ -1447,11 +1504,17 @@ void draw_floppy_fish(Visualizer *vis, cairo_t *cr) {
         ff_draw_obstacle_column(s_ff_pipes[i].theme, cr, s_ff_pipes[i].x, gc + gap * 0.5, h - floor_h, pipe_width, gc, false);
     }
 
-    // Floor, crossfaded the same way as the sky.
-    ff_draw_theme_floor(cr, theme_from, w, h, floor_h, s_ff_bubble_phase);
+    // Floor, crossfaded the same way as the sky - cached base fill blitted,
+    // then the live ripples/planks/tiles (and whatever decoration has to
+    // sit on top of them) drawn on top.
+    cairo_set_source_surface(cr, s_ff_floor_cache[theme_from], 0, base_y);
+    cairo_paint(cr);
+    ff_draw_theme_floor_scroll(cr, theme_from, w, h, floor_h, s_ff_bubble_phase);
     if (blend_t > 0.0) {
         cairo_push_group(cr);
-        ff_draw_theme_floor(cr, theme_to, w, h, floor_h, s_ff_bubble_phase);
+        cairo_set_source_surface(cr, s_ff_floor_cache[theme_to], 0, base_y);
+        cairo_paint(cr);
+        ff_draw_theme_floor_scroll(cr, theme_to, w, h, floor_h, s_ff_bubble_phase);
         cairo_pop_group_to_source(cr);
         cairo_paint_with_alpha(cr, blend_t);
     }

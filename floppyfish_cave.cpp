@@ -24,8 +24,10 @@ void ff_draw_cave_backdrop(cairo_t *cr, double w, double h, double base_y) {
     cairo_fill(cr);
 }
 
-void ff_draw_cave_floor(cairo_t *cr, double w, double h, double floor_h, double bubble_phase) {
-    (void)bubble_phase;
+// Static: this floor never had any bubble_phase-driven motion (the ridge
+// and glowing flecks are all fixed positions), so the whole thing is
+// cacheable and there's nothing left over for the scroll half below.
+void ff_draw_cave_floor_static(cairo_t *cr, double w, double h, double floor_h) {
     cairo_set_source_rgb(cr, 0.10, 0.09, 0.13);
     cairo_rectangle(cr, 0, h - floor_h, w, floor_h);
     cairo_fill(cr);
@@ -45,6 +47,12 @@ void ff_draw_cave_floor(cairo_t *cr, double w, double h, double floor_h, double 
         cairo_arc(cr, fx, fy, 2.0, 0, 2 * M_PI);
         cairo_fill(cr);
     }
+}
+
+// Scroll: nothing to animate here - kept only so the cave theme satisfies
+// the same static/scroll contract as the other three.
+void ff_draw_cave_floor_scroll(cairo_t *cr, double w, double h, double floor_h, double bubble_phase) {
+    (void)cr; (void)w; (void)h; (void)floor_h; (void)bubble_phase;
 }
 
 void ff_draw_cave_seaweed(cairo_t *cr, double x, double base_y, double height, double t, double alpha_mult) {

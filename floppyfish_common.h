@@ -61,10 +61,23 @@ void ff_draw_cave_backdrop(cairo_t *cr, double w, double h, double base_y);
 void ff_draw_atlantis_backdrop(cairo_t *cr, double w, double h, double base_y);
 
 // --- Per-theme floor --------------------------------------------------------
-void ff_draw_reef_floor(cairo_t *cr, double w, double h, double floor_h, double bubble_phase);
-void ff_draw_ship_floor(cairo_t *cr, double w, double h, double floor_h, double bubble_phase);
-void ff_draw_cave_floor(cairo_t *cr, double w, double h, double floor_h, double bubble_phase);
-void ff_draw_atlantis_floor(cairo_t *cr, double w, double h, double floor_h, double bubble_phase);
+// Split into a static part (base fill plus any non-scrolling decoration -
+// coins, gems, crystal flecks, baseline seam) and a scroll part (whatever
+// actually moves with bubble_phase - sand ripples, plank seams, mosaic
+// tiles). The static part doesn't depend on bubble_phase at all, so callers
+// can render it once per theme into an offscreen surface and just blit that
+// every frame instead of repainting the whole floor rect from scratch; the
+// scroll part is cheap (a handful of lines/tiles) and meant to be redrawn
+// live on top of that cached blit each frame.
+void ff_draw_reef_floor_static(cairo_t *cr, double w, double h, double floor_h);
+void ff_draw_ship_floor_static(cairo_t *cr, double w, double h, double floor_h);
+void ff_draw_cave_floor_static(cairo_t *cr, double w, double h, double floor_h);
+void ff_draw_atlantis_floor_static(cairo_t *cr, double w, double h, double floor_h);
+
+void ff_draw_reef_floor_scroll(cairo_t *cr, double w, double h, double floor_h, double bubble_phase);
+void ff_draw_ship_floor_scroll(cairo_t *cr, double w, double h, double floor_h, double bubble_phase);
+void ff_draw_cave_floor_scroll(cairo_t *cr, double w, double h, double floor_h, double bubble_phase);
+void ff_draw_atlantis_floor_scroll(cairo_t *cr, double w, double h, double floor_h, double bubble_phase);
 
 // --- Per-theme floor decoration clump (seaweed/rope/crystals/kelp) --------
 // x/base_y/height/t match the slot shared across themes so the same patch
@@ -78,8 +91,25 @@ void ff_draw_atlantis_seaweed(cairo_t *cr, double x, double base_y, double heigh
 // The only functions that need to know all FF_THEME_COUNT themes exist.
 void ff_draw_obstacle_column(int theme, cairo_t *cr, double x, double y0, double y1,
                               double width, double seed, bool tip_at_y1);
+
+// Full sky/floor draws (static + animated together), kept for anyone that
+// wants the simple one-call version. draw_floppy_fish itself uses the split
+// static/animated calls below instead, so it can cache the static part.
 void ff_draw_theme_sky(cairo_t *cr, int theme, double w, double h, double bubble_phase);
 void ff_draw_theme_floor(cairo_t *cr, int theme, double w, double h, double floor_h, double bubble_phase);
+
+// Static half of the sky: gradient + distant skyline backdrop, no
+// bubble_phase dependency - safe to render once per theme into an offscreen
+// surface and blit every frame.
+void ff_draw_theme_sky_static(cairo_t *cr, int theme, double w, double h);
+// Animated half of the sky: the rising ambient particles/bubbles. Cheap, so
+// this is meant to be redrawn live on top of the cached static blit above.
+void ff_draw_theme_particles(cairo_t *cr, int theme, double w, double h, double bubble_phase);
+
+// Static/animated split for the floor, same idea as the sky above.
+void ff_draw_theme_floor_static(cairo_t *cr, int theme, double w, double h, double floor_h);
+void ff_draw_theme_floor_scroll(cairo_t *cr, int theme, double w, double h, double floor_h, double bubble_phase);
+
 void ff_draw_seaweed(cairo_t *cr, double x, double base_y, double height, double t, int theme, double alpha_mult);
 
 #endif
