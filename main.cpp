@@ -257,6 +257,15 @@ int main(int argc, char **argv) {
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
     if (g_audio_dev != 0) SDL_CloseAudioDevice(g_audio_dev);
+
+    // Must come after every other cairo object (surfaces, font faces, ...)
+    // has been destroyed, and no cairo calls may happen after it. Frees
+    // cairo's own internal static caches (e.g. its toy-font-face hash
+    // table) that it otherwise intentionally keeps alive for the life of
+    // the process - this is purely so leak checkers like ASan/LSan don't
+    // flag them; real (non-debug) builds don't need this call.
+    cairo_debug_reset_static_data();
+
     SDL_Quit();
     return 0;
 }
