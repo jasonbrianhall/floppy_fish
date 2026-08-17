@@ -251,6 +251,7 @@ int main(int argc, char **argv) {
         SDL_RenderPresent(renderer);
     }
 
+    shutdown_floppy_fish_system();
     cairo_surface_destroy(surface);
     SDL_DestroyTexture(texture);
     SDL_DestroyRenderer(renderer);

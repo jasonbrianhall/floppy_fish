@@ -36,4 +36,9 @@ void init_floppy_fish_system(Visualizer *vis);
 void update_floppy_fish(Visualizer *vis, double dt);
 void draw_floppy_fish(Visualizer *vis, cairo_t *cr);
 
+// Frees process-lifetime resources cached by the game (currently the UI
+// toy font face). Call once at real program shutdown, after the last
+// draw_floppy_fish() call.
+void shutdown_floppy_fish_system();
+
 #endif

@@ -457,6 +457,11 @@ static double s_ff_bubble_phase = 0.0;
 static double s_ff_flap_anim = 0.0;  // tail-flap animation clock, ticks while playing
 static int s_ff_fish_palette = 0;    // random new color friend each game
 
+// Cached toy font face for the UI text - created once on first use, freed
+// explicitly in shutdown_floppy_fish_system() so it doesn't show up as a
+// leak at process exit (see draw_floppy_fish).
+static cairo_font_face_t *s_ff_font_face = NULL;
+
 // Background critters: small fish darting by at their own pace, plus an
 // octopus, purely decorative and drawn behind the pipes so they never read
 // as obstacles (and so they visibly vanish behind a pipe as they cross it).
@@ -684,6 +689,17 @@ void init_floppy_fish_system(Visualizer *vis) {
     vis->sound_score=false;
     vis->sound_dead=false;
 #endif
+}
+
+// Frees process-lifetime cairo resources cached by this file (currently
+// just the UI toy font face - see draw_floppy_fish). Call once at real
+// program shutdown, after the last draw_floppy_fish() call, so ASan/LSan
+// don't flag it as an unreachable-at-exit leak.
+void shutdown_floppy_fish_system() {
+    if (s_ff_font_face) {
+        cairo_font_face_destroy(s_ff_font_face);
+        s_ff_font_face = NULL;
+    }
 }
 
 static void ff_flap(Visualizer *vis) {
@@ -1418,7 +1434,11 @@ void draw_floppy_fish(Visualizer *vis, cairo_t *cr) {
     // playful "floppy fish" tone better than a plain sans font. Cairo's toy
     // font API falls back to a default sans face if this name isn't
     // installed, so this degrades gracefully rather than failing.
-    cairo_select_font_face(cr, "Comic Sans MS", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
+    if (!s_ff_font_face) {
+        s_ff_font_face = cairo_toy_font_face_create(
+            "Comic Sans MS", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
+    }
+    cairo_set_font_face(cr, s_ff_font_face);
     cairo_set_font_size(cr, h * 0.08);
     char score_text[16];
     snprintf(score_text, sizeof(score_text), "%d", s_ff_score);
