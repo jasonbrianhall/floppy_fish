@@ -1,0 +1,16 @@
+# Suppressions for known, bounded, process-lifetime caches inside libraries
+# we don't control. These are one-time (not per-frame/per-run growing)
+# allocations that the libraries intentionally keep alive until process
+# exit for reuse - not real leaks in our code. Trying to force these to be
+# freed from outside (e.g. cairo_debug_reset_static_data()) is unsupported
+# and can crash, since these libraries' internal caches aren't designed to
+# be torn down early.
+#
+# Usage:
+#   LSAN_OPTIONS=suppressions=lsan.supp ./floppyfish_debug
+
+leak:libfontconfig.so
+leak:libpango
+leak:libgtk-3.so
+leak:libdecor
+leak:cairo_toy_font_face_create
