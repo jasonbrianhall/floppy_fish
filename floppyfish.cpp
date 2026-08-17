@@ -126,79 +126,202 @@ static double s_ff_spawn_timer = 0.0;
 static int s_ff_score = 0;
 static int s_ff_best_score = 0;      // "today's" best - resets each time the game process starts
 
-// Score thresholds for the medal shown on the Game Over screen - below
-// bronze is "no medal", then each tier takes real, escalating skill.
-#define FF_MEDAL_BRONZE_SCORE 10
-#define FF_MEDAL_SILVER_SCORE 15
-#define FF_MEDAL_GOLD_SCORE   30
-#define FF_MEDAL_PLATINUM_SCORE 40
+// Score thresholds for the trinket shown on the Game Over screen - below
+// sea shell is "no trinket", then each tier takes real, escalating skill.
+// Underwater-flavored instead of generic sports medals: a beachcomber's
+// shell, an oyster's pearl, a pirate's doubloon, and a full sunken-treasure
+// chest for the very best runs.
+#define FF_MEDAL_SHELL_SCORE     10
+#define FF_MEDAL_PEARL_SCORE     15
+#define FF_MEDAL_DOUBLOON_SCORE  30
+#define FF_MEDAL_TREASURE_SCORE  40
 
 static const char *ff_medal_for_score(int score) {
-    if (score >= FF_MEDAL_PLATINUM_SCORE) return "Platinum";
-    if (score >= FF_MEDAL_GOLD_SCORE)   return "Gold";
-    if (score >= FF_MEDAL_SILVER_SCORE) return "Silver";
-    if (score >= FF_MEDAL_BRONZE_SCORE) return "Bronze";
+    if (score >= FF_MEDAL_TREASURE_SCORE) return "Sunken Treasure";
+    if (score >= FF_MEDAL_DOUBLOON_SCORE) return "Gold Doubloon";
+    if (score >= FF_MEDAL_PEARL_SCORE)    return "Pearl";
+    if (score >= FF_MEDAL_SHELL_SCORE)    return "Sea Shell";
     return "None";
 }
 
-// Base/shadow/highlight colors per tier, used to draw an actual medal icon
-// (not just a text label) on the Game Over screen.
-static void ff_medal_colors(const char *medal,
-                             double *r, double *g, double *b,
-                             double *dr, double *dg, double *db,
-                             double *hr, double *hg, double *hb) {
-    if (strcmp(medal, "Platinum") == 0) {
-        *r = 0.87; *g = 0.92; *b = 0.96;   // pale icy silver-blue
-        *dr = 0.62; *dg = 0.68; *db = 0.74;
-        *hr = 1.00; *hg = 1.00; *hb = 1.00;
-    } else if (strcmp(medal, "Gold") == 0) {
-        *r = 1.00; *g = 0.84; *b = 0.15;
-        *dr = 0.78; *dg = 0.58; *db = 0.06;
-        *hr = 1.00; *hg = 0.97; *hb = 0.70;
-    } else if (strcmp(medal, "Silver") == 0) {
-        *r = 0.80; *g = 0.82; *b = 0.85;
-        *dr = 0.55; *dg = 0.57; *db = 0.60;
-        *hr = 1.00; *hg = 1.00; *hb = 1.00;
-    } else { // Bronze
-        *r = 0.80; *g = 0.50; *b = 0.20;
-        *dr = 0.55; *dg = 0.32; *db = 0.10;
-        *hr = 1.00; *hg = 0.80; *hb = 0.55;
+// A fan-ridged scallop shell, hinged at the bottom with wedges alternating
+// two cream/pink shades for the ribbed texture, and a small hinge knob.
+static void ff_draw_trinket_shell(cairo_t *cr, double cx, double cy, double radius) {
+    double hinge_x = cx, hinge_y = cy + radius * 0.70;
+    const int ridges = 7;
+    double start_ang = -160.0 * M_PI / 180.0, end_ang = -20.0 * M_PI / 180.0;
+    double px[ridges + 1], py[ridges + 1];
+    for (int i = 0; i <= ridges; i++) {
+        double ang = start_ang + (end_ang - start_ang) * i / ridges;
+        px[i] = hinge_x + cos(ang) * radius * 1.15;
+        py[i] = hinge_y + sin(ang) * radius * 1.15;
     }
+
+    for (int i = 0; i < ridges; i++) {
+        bool light = (i % 2) == 0;
+        if (light) cairo_set_source_rgb(cr, 0.97, 0.90, 0.83);
+        else cairo_set_source_rgb(cr, 0.90, 0.78, 0.70);
+        cairo_move_to(cr, hinge_x, hinge_y);
+        cairo_line_to(cr, px[i], py[i]);
+        cairo_line_to(cr, px[i + 1], py[i + 1]);
+        cairo_close_path(cr);
+        cairo_fill(cr);
+    }
+
+    // Ridge lines radiating from the hinge, plus the shell's outer rim.
+    cairo_set_source_rgba(cr, 0.72, 0.48, 0.40, 0.8);
+    cairo_set_line_width(cr, radius * 0.05);
+    cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND);
+    for (int i = 0; i <= ridges; i++) {
+        cairo_move_to(cr, hinge_x, hinge_y);
+        cairo_line_to(cr, px[i], py[i]);
+        cairo_stroke(cr);
+    }
+    cairo_move_to(cr, px[0], py[0]);
+    for (int i = 1; i <= ridges; i++) cairo_line_to(cr, px[i], py[i]);
+    cairo_stroke(cr);
+
+    // Hinge knob.
+    cairo_set_source_rgb(cr, 0.85, 0.68, 0.60);
+    cairo_arc(cr, hinge_x, hinge_y, radius * 0.14, 0, 2 * M_PI);
+    cairo_fill(cr);
 }
 
-// Draws a simple round medal: a short ribbon stub above a shaded disc with
-// a highlight arc, colored per-tier via ff_medal_colors.
-static void ff_draw_medal(cairo_t *cr, double cx, double cy, double radius, const char *medal) {
-    double r, g, b, dr, dg, db, hr, hg, hb;
-    ff_medal_colors(medal, &r, &g, &b, &dr, &dg, &db, &hr, &hg, &hb);
-
-    // Ribbon stub poking out above the disc.
-    cairo_set_source_rgb(cr, dr, dg, db);
-    cairo_move_to(cr, cx - radius * 0.32, cy - radius * 0.75);
-    cairo_line_to(cr, cx + radius * 0.32, cy - radius * 0.75);
-    cairo_line_to(cr, cx + radius * 0.22, cy - radius * 1.25);
-    cairo_line_to(cr, cx - radius * 0.22, cy - radius * 1.25);
-    cairo_close_path(cr);
+// An open clamshell cup holding a glossy pearl.
+static void ff_draw_trinket_pearl(cairo_t *cr, double cx, double cy, double radius) {
+    double cup_y = cy + radius * 0.30;
+    cairo_set_source_rgb(cr, 0.72, 0.70, 0.76);
+    cairo_save(cr);
+    cairo_translate(cr, cx, cup_y);
+    cairo_scale(cr, 1.0, 0.5);
+    cairo_arc(cr, 0, 0, radius * 0.95, 0, M_PI);
+    cairo_restore(cr);
     cairo_fill(cr);
+    cairo_set_source_rgba(cr, 0.50, 0.48, 0.56, 0.7);
+    cairo_set_line_width(cr, radius * 0.05);
+    cairo_save(cr);
+    cairo_translate(cr, cx, cup_y);
+    cairo_scale(cr, 1.0, 0.5);
+    cairo_arc(cr, 0, 0, radius * 0.95, 0, M_PI);
+    cairo_restore(cr);
+    cairo_stroke(cr);
 
-    // Disc body with a radial gradient so it reads as a shiny metal, not a
-    // flat circle.
+    double pearl_cy = cy - radius * 0.08;
+    cairo_pattern_t *pat = cairo_pattern_create_radial(
+        cx - radius * 0.16, pearl_cy - radius * 0.22, radius * 0.05,
+        cx, pearl_cy, radius * 0.58);
+    cairo_pattern_add_color_stop_rgb(pat, 0.0, 1.00, 1.00, 1.00);
+    cairo_pattern_add_color_stop_rgb(pat, 0.55, 0.93, 0.90, 0.90);
+    cairo_pattern_add_color_stop_rgb(pat, 1.0, 0.74, 0.70, 0.76);
+    cairo_set_source(cr, pat);
+    cairo_arc(cr, cx, pearl_cy, radius * 0.58, 0, 2 * M_PI);
+    cairo_fill(cr);
+    cairo_pattern_destroy(pat);
+
+    cairo_set_source_rgba(cr, 1.0, 1.0, 1.0, 0.7);
+    cairo_arc(cr, cx - radius * 0.18, pearl_cy - radius * 0.22, radius * 0.12, 0, 2 * M_PI);
+    cairo_fill(cr);
+}
+
+// A gold coin with a radial shine, a milled/reeded edge, and a simple
+// stamped star at the center - a pirate's doubloon rather than a generic
+// medal.
+static void ff_draw_trinket_doubloon(cairo_t *cr, double cx, double cy, double radius) {
     cairo_pattern_t *pat = cairo_pattern_create_radial(
         cx - radius * 0.30, cy - radius * 0.35, radius * 0.10,
         cx, cy, radius);
-    cairo_pattern_add_color_stop_rgb(pat, 0.0, hr, hg, hb);
-    cairo_pattern_add_color_stop_rgb(pat, 0.55, r, g, b);
-    cairo_pattern_add_color_stop_rgb(pat, 1.0, dr, dg, db);
+    cairo_pattern_add_color_stop_rgb(pat, 0.0, 1.00, 0.97, 0.70);
+    cairo_pattern_add_color_stop_rgb(pat, 0.55, 1.00, 0.84, 0.15);
+    cairo_pattern_add_color_stop_rgb(pat, 1.0, 0.70, 0.50, 0.06);
     cairo_set_source(cr, pat);
     cairo_arc(cr, cx, cy, radius, 0, 2 * M_PI);
     cairo_fill(cr);
     cairo_pattern_destroy(pat);
 
-    // Rim
-    cairo_set_source_rgb(cr, dr, dg, db);
-    cairo_set_line_width(cr, radius * 0.08);
-    cairo_arc(cr, cx, cy, radius * 0.94, 0, 2 * M_PI);
+    // Reeded edge - short radial ticks around the rim.
+    cairo_set_source_rgb(cr, 0.60, 0.42, 0.06);
+    cairo_set_line_width(cr, fmax(1.0, radius * 0.06));
+    int ticks = 24;
+    for (int i = 0; i < ticks; i++) {
+        double ang = 2 * M_PI * i / ticks;
+        cairo_move_to(cr, cx + cos(ang) * radius * 0.90, cy + sin(ang) * radius * 0.90);
+        cairo_line_to(cr, cx + cos(ang) * radius * 1.00, cy + sin(ang) * radius * 1.00);
+        cairo_stroke(cr);
+    }
+
+    // Stamped star emblem.
+    cairo_set_source_rgba(cr, 0.62, 0.44, 0.06, 0.85);
+    int points = 5;
+    double outer = radius * 0.42, inner = radius * 0.18;
+    cairo_new_path(cr);
+    for (int i = 0; i < points * 2; i++) {
+        double ang = -M_PI / 2 + M_PI * i / points;
+        double rr = (i % 2 == 0) ? outer : inner;
+        double x = cx + cos(ang) * rr, y = cy + sin(ang) * rr;
+        if (i == 0) cairo_move_to(cr, x, y); else cairo_line_to(cr, x, y);
+    }
+    cairo_close_path(cr);
+    cairo_fill(cr);
+}
+
+// A small treasure chest with a domed lid, gold trim/lock, and a little
+// gold and gems spilling out the top - the top-tier trinket.
+static void ff_draw_trinket_chest(cairo_t *cr, double cx, double cy, double radius) {
+    double w = radius * 1.85, h = radius * 0.95;
+    double body_y0 = cy + radius * 0.05;
+    double x0 = cx - w * 0.5, x1 = cx + w * 0.5;
+
+    // Body.
+    cairo_set_source_rgb(cr, 0.36, 0.23, 0.11);
+    cairo_rectangle(cr, x0, body_y0, w, h);
+    cairo_fill(cr);
+
+    // Domed lid.
+    cairo_set_source_rgb(cr, 0.44, 0.28, 0.14);
+    cairo_move_to(cr, x0, body_y0);
+    cairo_curve_to(cr, x0, body_y0 - h * 0.62, x1, body_y0 - h * 0.62, x1, body_y0);
+    cairo_close_path(cr);
+    cairo_fill(cr);
+
+    // Gold trim bands and lock.
+    cairo_set_source_rgb(cr, 0.85, 0.68, 0.25);
+    cairo_set_line_width(cr, fmax(1.0, radius * 0.09));
+    cairo_move_to(cr, x0, body_y0);
+    cairo_line_to(cr, x1, body_y0);
     cairo_stroke(cr);
+    cairo_rectangle(cr, cx - w * 0.06, body_y0, w * 0.12, h * 0.9);
+    cairo_fill(cr);
+    cairo_rectangle(cr, cx - radius * 0.14, body_y0 - radius * 0.04, radius * 0.28, radius * 0.24);
+    cairo_fill(cr);
+    cairo_set_source_rgba(cr, 0, 0, 0, 0.35);
+    cairo_rectangle(cr, x0, body_y0, w, h);
+    cairo_stroke(cr);
+
+    // Gold coins and gems spilling out of the open lid.
+    static const double gem_r[3] = {0.95, 0.55, 0.35};
+    static const double gem_g[3] = {0.85, 0.90, 0.75};
+    static const double gem_b[3] = {0.25, 1.00, 0.95};
+    for (int i = 0; i < 5; i++) {
+        double gx = cx + (i - 2) * radius * 0.24;
+        double gy = body_y0 - radius * (0.30 + 0.18 * (i % 2));
+        double gr = radius * 0.13;
+        const double *col_r = &gem_r[i % 3], *col_g = &gem_g[i % 3], *col_b = &gem_b[i % 3];
+        cairo_set_source_rgb(cr, *col_r, *col_g, *col_b);
+        cairo_arc(cr, gx, gy, gr, 0, 2 * M_PI);
+        cairo_fill(cr);
+        cairo_set_source_rgba(cr, 1.0, 1.0, 1.0, 0.6);
+        cairo_arc(cr, gx - gr * 0.3, gy - gr * 0.3, gr * 0.3, 0, 2 * M_PI);
+        cairo_fill(cr);
+    }
+}
+
+// Dispatches to the right trinket shape for the tier - the one place that
+// needs to know all four exist.
+static void ff_draw_medal(cairo_t *cr, double cx, double cy, double radius, const char *medal) {
+    if (strcmp(medal, "Sunken Treasure") == 0) ff_draw_trinket_chest(cr, cx, cy, radius);
+    else if (strcmp(medal, "Gold Doubloon") == 0) ff_draw_trinket_doubloon(cr, cx, cy, radius);
+    else if (strcmp(medal, "Pearl") == 0) ff_draw_trinket_pearl(cr, cx, cy, radius);
+    else ff_draw_trinket_shell(cr, cx, cy, radius); // Sea Shell
 }
 
 // All-time high-score persistence: standalone-game only (zenamp's
@@ -290,6 +413,7 @@ static double s_ff_shark_x = 0.0;
 static double s_ff_shark_y = 0.0;
 static double s_ff_shark_speed = 0.0;
 static int s_ff_shark_dir = -1;
+static double s_ff_shark_scale = 1.0; // most passes are medium-sized; occasionally much larger
 
 // Another rare guest, same cadence as the shark but themed to match
 // whatever's currently on screen: a mermaid drifts through during the
@@ -361,10 +485,21 @@ static void ff_spawn_shark(Visualizer *vis) {
     s_ff_shark_dir = dir;
     s_ff_shark_speed = vis->height * (0.12 + 0.08 * ((double)rand() / RAND_MAX));
     s_ff_shark_y = vis->height * (0.15 + 0.35 * ((double)rand() / RAND_MAX));
+
+    // Size varies pass to pass: cubing a uniform random value skews most
+    // rolls toward the low end of the range (medium), while still letting
+    // an occasional roll land way out near the top (very large) - "once in
+    // a while, a much bigger shark".
+    double roll = (double)rand() / RAND_MAX;
+    s_ff_shark_scale = 0.85 + 1.75 * (roll * roll * roll);
+
+    // Off-screen spawn margin scales with size too, so a very large shark
+    // doesn't visibly pop in/out at the screen edge.
+    double margin = 0.10 * s_ff_shark_scale;
     if (dir < 0) {
-        s_ff_shark_x = vis->width * (1.10 + 0.2 * ((double)rand() / RAND_MAX));
+        s_ff_shark_x = vis->width * (1.10 + margin + 0.2 * ((double)rand() / RAND_MAX));
     } else {
-        s_ff_shark_x = -vis->width * (0.10 + 0.2 * ((double)rand() / RAND_MAX));
+        s_ff_shark_x = -vis->width * (0.10 + margin + 0.2 * ((double)rand() / RAND_MAX));
     }
     s_ff_shark_active = true;
 }
@@ -911,11 +1046,11 @@ static void ff_draw_octopus(cairo_t *cr, double x, double y, double scale, doubl
 // attached directly to its outline so they read as one animal rather than
 // floating shapes. dir flips it to face the direction it's actually
 // swimming.
-static void ff_draw_shark(cairo_t *cr, double x, double y, double t, int dir, double alpha_mult) {
+static void ff_draw_shark(cairo_t *cr, double x, double y, double t, int dir, double alpha_mult, double size_scale) {
     if (alpha_mult <= 0.0) return;
     cairo_save(cr);
     cairo_translate(cr, x, y);
-    cairo_scale(cr, (double)dir, 1.0);
+    cairo_scale(cr, (double)dir * size_scale, size_scale);
 
     double sway = sin(t * 1.4) * 0.05;
     cairo_rotate(cr, sway);
@@ -1138,7 +1273,7 @@ void draw_floppy_fish(Visualizer *vis, cairo_t *cr) {
     // furthest back of all so it never competes with the pipes/fish.
     if (s_ff_shark_active) {
         ff_draw_shark(cr, s_ff_shark_x, s_ff_shark_y, vis->time_offset, s_ff_shark_dir,
-                       ff_edge_fade(s_ff_shark_x, w));
+                       ff_edge_fade(s_ff_shark_x, w), s_ff_shark_scale);
     }
     if (s_ff_guest_active) {
         double guest_alpha = ff_edge_fade(s_ff_guest_x, w);
@@ -1183,7 +1318,11 @@ void draw_floppy_fish(Visualizer *vis, cairo_t *cr) {
 
     // Score
     cairo_set_source_rgba(cr, 0, 0, 0, 0.35);
-    cairo_select_font_face(cr, "Sans", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
+    // A rounder, bouncier face for all the game's UI text, matching the
+    // playful "floppy fish" tone better than a plain sans font. Cairo's toy
+    // font API falls back to a default sans face if this name isn't
+    // installed, so this degrades gracefully rather than failing.
+    cairo_select_font_face(cr, "Comic Sans MS", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
     cairo_set_font_size(cr, h * 0.08);
     char score_text[16];
     snprintf(score_text, sizeof(score_text), "%d", s_ff_score);
