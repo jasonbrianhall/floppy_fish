@@ -465,6 +465,49 @@ static void ff_spawn_pipe(Visualizer *vis) {
     }
 }
 
+// --- Small geometry helpers for triangular (cave-theme) hitboxes -----------
+// The cave stalactites/stalagmites are drawn as a jagged taper from full
+// width at the rooted end down to a point at the gap-facing tip (see
+// ff_draw_cave_column), so a plain axis-aligned rect hitbox looks noticeably
+// looser than the art there. These give the cave theme a triangular hitbox
+// - the un-jittered envelope of that taper - so collisions there track the
+// visual shape instead.
+
+// Squared distance from point P to segment AB.
+static double ff_point_seg_dist2(double px, double py, double ax, double ay, double bx, double by) {
+    double vx = bx - ax, vy = by - ay;
+    double wx = px - ax, wy = py - ay;
+    double len2 = vx * vx + vy * vy;
+    double t = (len2 > 1e-9) ? (vx * wx + vy * wy) / len2 : 0.0;
+    if (t < 0.0) t = 0.0;
+    if (t > 1.0) t = 1.0;
+    double cx = ax + t * vx, cy = ay + t * vy;
+    double dx = px - cx, dy = py - cy;
+    return dx * dx + dy * dy;
+}
+
+static bool ff_point_in_triangle(double px, double py, double ax, double ay,
+                                  double bx, double by, double cx, double cy) {
+    double d1 = (px - bx) * (ay - by) - (ax - bx) * (py - by);
+    double d2 = (px - cx) * (by - cy) - (bx - cx) * (py - cy);
+    double d3 = (px - ax) * (cy - ay) - (cx - ax) * (py - ay);
+    bool has_neg = (d1 < 0) || (d2 < 0) || (d3 < 0);
+    bool has_pos = (d1 > 0) || (d2 > 0) || (d3 > 0);
+    return !(has_neg && has_pos);
+}
+
+// Squared distance from a point to a filled triangle (0 if the point is
+// inside it).
+static double ff_point_triangle_dist2(double px, double py,
+                                       double ax, double ay, double bx, double by,
+                                       double cx, double cy) {
+    if (ff_point_in_triangle(px, py, ax, ay, bx, by, cx, cy)) return 0.0;
+    double d1 = ff_point_seg_dist2(px, py, ax, ay, bx, by);
+    double d2 = ff_point_seg_dist2(px, py, bx, by, cx, cy);
+    double d3 = ff_point_seg_dist2(px, py, cx, cy, ax, ay);
+    return fmin(d1, fmin(d2, d3));
+}
+
 void update_floppy_fish(Visualizer *vis, double dt) {
     if (vis->width <= 0 || vis->height <= 0) return;
 
@@ -610,22 +653,38 @@ void update_floppy_fish(Visualizer *vis, double dt) {
 #endif
             }
 
-            // Circle-vs-rect collision against the top and bottom coral
-            // columns. The corals is drawn scaled down to guarantee its jags
-            // never reach past this exact box, so no padding is needed here.
+            // Collision against the top and bottom obstacle columns. Cave
+            // stalactites/stalagmites taper to a point (see
+            // ff_draw_cave_column), so they get a matching triangular
+            // hitbox; every other theme keeps the simple rect, which the
+            // art is drawn scaled down to always fit inside.
             double gap = vis->height * 0.24;
             double top_rect_y0 = 0, top_rect_y1 = s_ff_pipes[i].gap_center - gap * 0.5;
             double bot_rect_y0 = s_ff_pipes[i].gap_center + gap * 0.5, bot_rect_y1 = vis->height - floor_h;
             double rx0 = s_ff_pipes[i].x, rx1 = s_ff_pipes[i].x + pipe_width;
-
-            double cx = fmax(rx0, fmin(fish_x, rx1));
-            double cy_top = fmax(top_rect_y0, fmin(s_ff_fish_y, top_rect_y1));
-            double cy_bot = fmax(bot_rect_y0, fmin(s_ff_fish_y, bot_rect_y1));
-
-            double dx = fish_x - cx;
-            double dtop = dx * dx + (s_ff_fish_y - cy_top) * (s_ff_fish_y - cy_top);
-            double dbot = dx * dx + (s_ff_fish_y - cy_bot) * (s_ff_fish_y - cy_bot);
             double r2 = (fish_radius * 0.82) * (fish_radius * 0.82);
+
+            double dtop, dbot;
+            if (s_ff_pipes[i].theme == FF_THEME_CAVE) {
+                double col_cx = (rx0 + rx1) * 0.5;
+                // Top: rooted along the ceiling (y0), tapers to a point at
+                // the gap edge (y1).
+                dtop = ff_point_triangle_dist2(fish_x, s_ff_fish_y,
+                                                rx0, top_rect_y0, rx1, top_rect_y0,
+                                                col_cx, top_rect_y1);
+                // Bottom: rooted along the floor (y1), tapers to a point at
+                // the gap edge (y0).
+                dbot = ff_point_triangle_dist2(fish_x, s_ff_fish_y,
+                                                rx0, bot_rect_y1, rx1, bot_rect_y1,
+                                                col_cx, bot_rect_y0);
+            } else {
+                double cx = fmax(rx0, fmin(fish_x, rx1));
+                double cy_top = fmax(top_rect_y0, fmin(s_ff_fish_y, top_rect_y1));
+                double cy_bot = fmax(bot_rect_y0, fmin(s_ff_fish_y, bot_rect_y1));
+                double dx = fish_x - cx;
+                dtop = dx * dx + (s_ff_fish_y - cy_top) * (s_ff_fish_y - cy_top);
+                dbot = dx * dx + (s_ff_fish_y - cy_bot) * (s_ff_fish_y - cy_bot);
+            }
 
             if (dtop < r2 || dbot < r2) {
                 s_ff_state = FF_GAME_OVER;
