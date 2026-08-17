@@ -13,6 +13,10 @@
 #include <math.h>
 #include <stdbool.h>
 
+#ifndef M_PI
+#define M_PI  3.14159265359
+#endif
+
 // Four visual themes the run cycles through as the fish travels: coral reef,
 // a sunken pirate ship, a dark cave, and the ruins of Atlantis.
 typedef enum { FF_THEME_REEF = 0, FF_THEME_SHIP = 1, FF_THEME_CAVE = 2, FF_THEME_ATLANTIS = 3, FF_THEME_COUNT = 4 } FFTheme;

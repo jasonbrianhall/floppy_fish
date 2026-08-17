@@ -1,5 +1,9 @@
 #include "floppyfish_common.h"
 
+#ifndef M_PI
+#define M_PI  3.14159265359
+#endif
+
 double ff_hash(double n) {
     double x = sin(n * 127.1) * 43758.5453;
     return x - floor(x);

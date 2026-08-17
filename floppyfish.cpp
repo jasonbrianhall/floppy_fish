@@ -19,6 +19,10 @@
 #endif
 #endif // FLOPPYSOUND
 
+#ifndef M_PI
+#define M_PI  3.14159265359
+#endif
+
 // ---- Flappy Fish ----
 // A Flappy Bird-style game: click to flap, swim between scrolling pipes,
 // don't hit the coral/wreck/rock/ruin. Fully mouse-driven, runs
@@ -875,14 +879,25 @@ void update_floppy_fish(Visualizer *vis, double dt) {
 
     s_ff_flap_anim += dt * (playing ? 1.0 : 0.4);
 
-    s_ff_fish_vel += gravity * dt;
-    s_ff_fish_y += s_ff_fish_vel * dt;
+    // Middle mouse button held: swim normally - straight and level, no
+    // gravity pulling the fish down and no flap impulse pushing it up.
+    // Purely a control-mode override (still subject to the usual pipe/
+    // floor/ceiling collisions below), not an invincibility cheat.
+    bool straight_swim = playing && vis->mouse_middle_held;
 
-    double max_up_speed = vis->height * 0.62;
-    double tilt = s_ff_fish_vel / max_up_speed;
-    if (tilt < -1.0) tilt = -1.0;
-    if (tilt > 1.4) tilt = 1.4;
-    s_ff_rotation = tilt * 0.55;
+    if (straight_swim) {
+        s_ff_fish_vel = 0.0;
+        s_ff_rotation = 0.0;
+    } else {
+        s_ff_fish_vel += gravity * dt;
+        s_ff_fish_y += s_ff_fish_vel * dt;
+
+        double max_up_speed = vis->height * 0.62;
+        double tilt = s_ff_fish_vel / max_up_speed;
+        if (tilt < -1.0) tilt = -1.0;
+        if (tilt > 1.4) tilt = 1.4;
+        s_ff_rotation = tilt * 0.55;
+    }
 
     if (playing) {
         // World-scroll distance drives which theme zone we're in - paused
@@ -1436,7 +1451,7 @@ void draw_floppy_fish(Visualizer *vis, cairo_t *cr) {
 #endif
 
         cairo_set_font_size(cr, h * 0.02);
-        const char *msg4 = "Keep Clicking to Swim Up and Avoid Obstacles; Not Clicking causes Floppy Fish to Sink";
+        const char *msg4 = "Keep Clicking to Swim Up and Avoid Obstacles; Not Clicking causes Floppy Fish to Sink (middle click swims normally)";
         cairo_text_extents(cr, msg4, &ext);
         cairo_move_to(cr, w * 0.5 - ext.width * 0.5, h * 0.78);
         cairo_show_text(cr, msg4);
