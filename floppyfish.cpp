@@ -291,6 +291,19 @@ static double s_ff_shark_y = 0.0;
 static double s_ff_shark_speed = 0.0;
 static int s_ff_shark_dir = -1;
 
+// Another rare guest, same cadence as the shark but themed to match
+// whatever's currently on screen: a mermaid drifts through during the
+// Atlantis zones, a diver during reef/ship/cave. Which one it is gets
+// decided once, at spawn time (see ff_spawn_guest), and holds for that
+// guest's whole pass across the tank.
+static bool s_ff_guest_active = false;
+static double s_ff_guest_wait = 0.0;
+static double s_ff_guest_x = 0.0;
+static double s_ff_guest_y = 0.0;
+static double s_ff_guest_speed = 0.0;
+static int s_ff_guest_dir = -1;
+static bool s_ff_guest_is_mermaid = false;
+
 static const double FF_FISH_X_FRAC = 0.30;
 
 static void ff_reset(Visualizer *vis) {
@@ -356,6 +369,32 @@ static void ff_spawn_shark(Visualizer *vis) {
     s_ff_shark_active = true;
 }
 
+// Sends the mermaid-or-diver guest across, same way as the shark. Which
+// silhouette it is gets picked from whichever theme currently dominates
+// the screen (s_ff_world_x, same lookup ff_spawn_pipe uses for obstacles),
+// so a diver never turns up over the Atlantis ruins and the mermaid never
+// turns up over a coral reef.
+static void ff_spawn_guest(Visualizer *vis) {
+    int dir = (rand() % 2 == 0) ? 1 : -1;
+    s_ff_guest_dir = dir;
+    s_ff_guest_speed = vis->height * (0.09 + 0.09 * ((double)rand() / RAND_MAX));
+    s_ff_guest_y = vis->height * (0.12 + 0.50 * ((double)rand() / RAND_MAX));
+    if (dir < 0) {
+        s_ff_guest_x = vis->width * (1.08 + 0.2 * ((double)rand() / RAND_MAX));
+    } else {
+        s_ff_guest_x = -vis->width * (0.08 + 0.2 * ((double)rand() / RAND_MAX));
+    }
+
+    double zone_len = vis->height * FF_ZONE_LEN_FRAC;
+    double trans_len = vis->height * FF_ZONE_TRANS_FRAC;
+    int tf, tt; double bt;
+    ff_theme_at(s_ff_world_x, zone_len, trans_len, &tf, &tt, &bt);
+    int dominant = (bt > 0.5) ? tt : tf;
+    s_ff_guest_is_mermaid = (dominant == FF_THEME_ATLANTIS);
+
+    s_ff_guest_active = true;
+}
+
 // Places one seaweed patch (used both for the initial scatter and for
 // recycling once a patch drifts off the left edge). Tries a handful of
 // random candidate x positions and keeps whichever is farthest from every
@@ -405,6 +444,9 @@ static void ff_init_background(Visualizer *vis) {
     // Shark stays off-screen for a while after launch before its first pass.
     s_ff_shark_active = false;
     s_ff_shark_wait = 12.0 + 15.0 * ((double)rand() / RAND_MAX);
+    // Same for the mermaid/diver guest, on its own independent cadence.
+    s_ff_guest_active = false;
+    s_ff_guest_wait = 10.0 + 14.0 * ((double)rand() / RAND_MAX);
     // Place patches one at a time so each new one can avoid the ones
     // already placed before it.
     for (int i = 0; i < FF_SEAWEED_COUNT; i++) s_ff_seaweed_x[i] = -1e9;
@@ -556,6 +598,23 @@ void update_floppy_fish(Visualizer *vis, double dt) {
         s_ff_shark_wait -= dt;
         if (s_ff_shark_wait <= 0.0) {
             ff_spawn_shark(vis);
+        }
+    }
+
+    // Mermaid/diver guest: same rare-pass pattern as the shark, independent
+    // timer so the two don't line up.
+    if (s_ff_guest_active) {
+        s_ff_guest_x += s_ff_guest_dir * s_ff_guest_speed * dt;
+        bool guest_off_left  = s_ff_guest_dir < 0 && s_ff_guest_x < -vis->width * 0.20;
+        bool guest_off_right = s_ff_guest_dir > 0 && s_ff_guest_x > vis->width * 1.20;
+        if (guest_off_left || guest_off_right) {
+            s_ff_guest_active = false;
+            s_ff_guest_wait = 16.0 + 20.0 * ((double)rand() / RAND_MAX);
+        }
+    } else {
+        s_ff_guest_wait -= dt;
+        if (s_ff_guest_wait <= 0.0) {
+            ff_spawn_guest(vis);
         }
     }
 
@@ -901,6 +960,131 @@ static void ff_draw_shark(cairo_t *cr, double x, double y, double t, int dir, do
     cairo_restore(cr);
 }
 
+// The Atlantis-zone guest: a mermaid silhouette gliding by, built the same
+// way as the shark (nose/nearest-swim-direction at +x, tail at -x) but with
+// a humanoid torso/head/trailing hair grafted onto the fish tail instead of
+// fins.
+static void ff_draw_mermaid(cairo_t *cr, double x, double y, double t, int dir, double alpha_mult) {
+    if (alpha_mult <= 0.0) return;
+    cairo_save(cr);
+    cairo_translate(cr, x, y);
+    cairo_scale(cr, (double)dir, 1.0);
+    double sway = sin(t * 1.3) * 0.06;
+    cairo_rotate(cr, sway);
+
+    double alpha = 0.42 * alpha_mult;
+    cairo_set_source_rgba(cr, 0.55, 0.35, 0.65, alpha);
+
+    double tail_swing = sin(t * 3.0) * 0.35;
+
+    // Forked tail fluke.
+    cairo_move_to(cr, -40, 2);
+    cairo_curve_to(cr, -52, -4, -62, -16 + tail_swing * 10, -74, -20 + tail_swing * 14);
+    cairo_curve_to(cr, -62, -6, -56, -2, -48, 0);
+    cairo_curve_to(cr, -56, 2, -62, 6, -74, 18 + tail_swing * 14);
+    cairo_curve_to(cr, -62, 14, -52, 4, -40, 2);
+    cairo_close_path(cr);
+    cairo_fill(cr);
+
+    // Tail, tapering from the waist out to the fluke.
+    cairo_move_to(cr, -6, 10);
+    cairo_curve_to(cr, -16, 14, -30, 10, -40, 4);
+    cairo_curve_to(cr, -30, -2, -16, -6, -6, -8);
+    cairo_close_path(cr);
+    cairo_fill(cr);
+
+    // Torso, waist to shoulders.
+    cairo_move_to(cr, -6, -8);
+    cairo_curve_to(cr, 0, -20, 14, -24, 22, -18);
+    cairo_curve_to(cr, 26, -12, 26, 0, 20, 6);
+    cairo_curve_to(cr, 12, 12, -2, 10, -6, 10);
+    cairo_close_path(cr);
+    cairo_fill(cr);
+
+    // Head.
+    cairo_arc(cr, 26, -22, 8, 0, 2 * M_PI);
+    cairo_fill(cr);
+
+    // Hair, trailing behind the swim direction and swaying independently
+    // of the tail beat.
+    double hair_sway = sin(t * 1.8) * 8.0;
+    cairo_set_line_width(cr, 5.0);
+    cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND);
+    cairo_move_to(cr, 20, -26);
+    cairo_curve_to(cr, 4, -24 + hair_sway * 0.3, -8, -14 + hair_sway * 0.6, -14, -4 + hair_sway);
+    cairo_stroke(cr);
+
+    // One arm, sweeping with the swim stroke.
+    cairo_set_line_width(cr, 4.0);
+    cairo_move_to(cr, 18, -6);
+    cairo_curve_to(cr, 26, 4, 30, 14, 26, 22);
+    cairo_stroke(cr);
+
+    cairo_restore(cr);
+}
+
+// The reef/ship/cave-zone guest: a scuba diver silhouette, trailing a few
+// rising bubbles from the regulator.
+static void ff_draw_diver(cairo_t *cr, double x, double y, double t, int dir, double alpha_mult) {
+    if (alpha_mult <= 0.0) return;
+    double kick = sin(t * 4.0) * 0.3;
+
+    cairo_save(cr);
+    cairo_translate(cr, x, y);
+    cairo_scale(cr, (double)dir, 1.0);
+
+    double alpha = 0.42 * alpha_mult;
+    cairo_set_source_rgba(cr, 0.08, 0.10, 0.14, alpha);
+
+    // Body, roughly horizontal, head toward the swim direction (+x).
+    cairo_move_to(cr, 26, -2);
+    cairo_curve_to(cr, 18, -10, 4, -10, -8, -6);
+    cairo_curve_to(cr, -16, -4, -22, 0, -26, 4);
+    cairo_curve_to(cr, -18, 8, -4, 10, 10, 8);
+    cairo_curve_to(cr, 18, 6, 24, 2, 26, -2);
+    cairo_close_path(cr);
+    cairo_fill(cr);
+
+    // Head/mask.
+    cairo_arc(cr, 30, -4, 7, 0, 2 * M_PI);
+    cairo_fill(cr);
+
+    // Air tank on the back.
+    cairo_save(cr);
+    cairo_translate(cr, -8, -10);
+    cairo_rotate(cr, -0.15);
+    cairo_rectangle(cr, -5, -10, 10, 20);
+    cairo_fill(cr);
+    cairo_restore(cr);
+
+    // Fins, kicking.
+    cairo_move_to(cr, -26, 4);
+    cairo_line_to(cr, -42, -2 + kick * 8);
+    cairo_line_to(cr, -42, 10 + kick * 8);
+    cairo_close_path(cr);
+    cairo_fill(cr);
+
+    // Trailing arm.
+    cairo_set_line_width(cr, 4.0);
+    cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND);
+    cairo_move_to(cr, 20, 2);
+    cairo_curve_to(cr, 26, 8, 30, 14, 28, 20);
+    cairo_stroke(cr);
+
+    cairo_restore(cr);
+
+    // A few bubbles rising from the regulator, drawn in world space (not
+    // flipped/rotated with the body) so they always float straight up
+    // regardless of which way the diver is facing.
+    cairo_set_source_rgba(cr, 1.0, 1.0, 1.0, 0.35 * alpha_mult);
+    for (int i = 0; i < 3; i++) {
+        double bx = x + dir * 24.0 + sin(t * 3.0 + i) * 3.0;
+        double by = y - 12.0 - fmod(t * 30.0 + i * 15.0, 40.0);
+        cairo_arc(cr, bx, by, 1.5 + (i % 2), 0, 2 * M_PI);
+        cairo_fill(cr);
+    }
+}
+
 void draw_floppy_fish(Visualizer *vis, cairo_t *cr) {
     if (vis->width <= 0 || vis->height <= 0) return;
 
@@ -955,6 +1139,14 @@ void draw_floppy_fish(Visualizer *vis, cairo_t *cr) {
     if (s_ff_shark_active) {
         ff_draw_shark(cr, s_ff_shark_x, s_ff_shark_y, vis->time_offset, s_ff_shark_dir,
                        ff_edge_fade(s_ff_shark_x, w));
+    }
+    if (s_ff_guest_active) {
+        double guest_alpha = ff_edge_fade(s_ff_guest_x, w);
+        if (s_ff_guest_is_mermaid) {
+            ff_draw_mermaid(cr, s_ff_guest_x, s_ff_guest_y, vis->time_offset, s_ff_guest_dir, guest_alpha);
+        } else {
+            ff_draw_diver(cr, s_ff_guest_x, s_ff_guest_y, vis->time_offset, s_ff_guest_dir, guest_alpha);
+        }
     }
     ff_draw_octopus(cr, s_ff_octopus_x, s_ff_octopus_y, 1.0, vis->time_offset,
                      ff_edge_fade(s_ff_octopus_x, w));
