@@ -1,5 +1,14 @@
 #include "visualization.h"
 #include <stdlib.h>
+#include <stdio.h>
+
+#ifdef _WIN32
+#include <direct.h>   // _mkdir
+#define FF_MKDIR(p) _mkdir(p)
+#else
+#include <sys/stat.h> // mkdir
+#define FF_MKDIR(p) mkdir(p, 0755)
+#endif
 
 // ---- Flappy Fish ----
 // A Flappy Bird-style game: click to flap, swim between scrolling pipes,
@@ -110,7 +119,49 @@ static double s_ff_rotation = 0.0;
 static FFPipe s_ff_pipes[FF_MAX_PIPES];
 static double s_ff_spawn_timer = 0.0;
 static int s_ff_score = 0;
-static int s_ff_best_score = 0;
+static int s_ff_best_score = 0;      // "today's" best - resets each time the game process starts
+static int s_ff_alltime_best = 0;    // persisted across runs, loaded from disk on startup
+
+// Where the persistent high score lives. On Windows this is
+// %APPDATA%\FloppyFish\highscore.txt (the standard per-user app-data
+// location); everywhere else it falls back to a dotfile in $HOME so the
+// same code still works for local/dev builds.
+static void ff_highscore_path(char *buf, size_t bufsize) {
+#ifdef _WIN32
+    const char *appdata = getenv("APPDATA");
+    if (!appdata) appdata = ".";
+    char dir[400];
+    snprintf(dir, sizeof(dir), "%s\\FloppyFish", appdata);
+    FF_MKDIR(dir);
+    snprintf(buf, bufsize, "%s\\highscore.txt", dir);
+#else
+    const char *home = getenv("HOME");
+    if (!home) home = ".";
+    snprintf(buf, bufsize, "%s/.floppyfish_highscore", home);
+#endif
+}
+
+static void ff_load_alltime_best(void) {
+    char path[512];
+    ff_highscore_path(path, sizeof(path));
+    s_ff_alltime_best = 0;
+    FILE *f = fopen(path, "r");
+    if (f) {
+        if (fscanf(f, "%d", &s_ff_alltime_best) != 1) s_ff_alltime_best = 0;
+        fclose(f);
+    }
+    printf("All-time high score: %d\n", s_ff_alltime_best);
+}
+
+static void ff_save_alltime_best(void) {
+    char path[512];
+    ff_highscore_path(path, sizeof(path));
+    FILE *f = fopen(path, "w");
+    if (f) {
+        fprintf(f, "%d\n", s_ff_alltime_best);
+        fclose(f);
+    }
+}
 static double s_ff_bubble_phase = 0.0;
 static double s_ff_flap_anim = 0.0;  // tail-flap animation clock, ticks while playing
 static int s_ff_fish_palette = 0;    // random new color friend each game
@@ -276,6 +327,7 @@ static void ff_init_background(Visualizer *vis) {
 
 void init_floppy_fish_system(Visualizer *vis) {
     s_ff_best_score = 0;
+    ff_load_alltime_best();
     s_ff_bg_init = false;
     ff_reset(vis);
     ff_init_background(vis);
@@ -453,7 +505,15 @@ void update_floppy_fish(Visualizer *vis, double dt) {
             if (!s_ff_pipes[i].scored && s_ff_pipes[i].x + pipe_width < fish_x) {
                 s_ff_pipes[i].scored = true;
                 s_ff_score++;
-                if (s_ff_score > s_ff_best_score) s_ff_best_score = s_ff_score;
+                if (s_ff_score > s_ff_best_score) {
+                    s_ff_best_score = s_ff_score;
+                    printf("New best score today: %d\n", s_ff_best_score);
+                }
+                if (s_ff_score > s_ff_alltime_best) {
+                    s_ff_alltime_best = s_ff_score;
+                    ff_save_alltime_best();
+                    printf("New all-time high score: %d\n", s_ff_alltime_best);
+                }
 #ifdef FLOPPYSOUND
                 vis->sound_score = true;
 #endif
@@ -1544,7 +1604,8 @@ void draw_floppy_fish(Visualizer *vis, cairo_t *cr) {
 
         cairo_set_font_size(cr, h * 0.032);
         char best_text[50];
-        snprintf(best_text, sizeof(best_text), "Best: %d", s_ff_best_score);
+        snprintf(best_text, sizeof(best_text), "Today's Best: %d   All-Time Best: %d",
+                 s_ff_best_score, s_ff_alltime_best);
         cairo_text_extents(cr, best_text, &ext);
         cairo_move_to(cr, w * 0.5 - ext.width * 0.5, h * 0.52);
         cairo_show_text(cr, best_text);
