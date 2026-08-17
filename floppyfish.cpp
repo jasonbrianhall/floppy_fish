@@ -1,7 +1,13 @@
 #include "visualization.h"
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
 
+// All-time high-score persistence is a standalone-game feature (needs a
+// writable per-user location on disk) - not used when this file is built
+// into zenamp's visualizer, so it's compiled in only alongside the rest of
+// the FLOPPYSOUND-gated standalone-game code.
+#ifdef FLOPPYSOUND
 #ifdef _WIN32
 #include <direct.h>   // _mkdir
 #define FF_MKDIR(p) _mkdir(p)
@@ -9,6 +15,7 @@
 #include <sys/stat.h> // mkdir
 #define FF_MKDIR(p) mkdir(p, 0755)
 #endif
+#endif // FLOPPYSOUND
 
 // ---- Flappy Fish ----
 // A Flappy Bird-style game: click to flap, swim between scrolling pipes,
@@ -120,6 +127,87 @@ static FFPipe s_ff_pipes[FF_MAX_PIPES];
 static double s_ff_spawn_timer = 0.0;
 static int s_ff_score = 0;
 static int s_ff_best_score = 0;      // "today's" best - resets each time the game process starts
+
+// Score thresholds for the medal shown on the Game Over screen - below
+// bronze is "no medal", then each tier takes real, escalating skill.
+#define FF_MEDAL_BRONZE_SCORE 10
+#define FF_MEDAL_SILVER_SCORE 15
+#define FF_MEDAL_GOLD_SCORE   30
+#define FF_MEDAL_PLATINUM_SCORE 40
+
+static const char *ff_medal_for_score(int score) {
+    if (score >= FF_MEDAL_PLATINUM_SCORE) return "Platinum";
+    if (score >= FF_MEDAL_GOLD_SCORE)   return "Gold";
+    if (score >= FF_MEDAL_SILVER_SCORE) return "Silver";
+    if (score >= FF_MEDAL_BRONZE_SCORE) return "Bronze";
+    return "None";
+}
+
+// Base/shadow/highlight colors per tier, used to draw an actual medal icon
+// (not just a text label) on the Game Over screen.
+static void ff_medal_colors(const char *medal,
+                             double *r, double *g, double *b,
+                             double *dr, double *dg, double *db,
+                             double *hr, double *hg, double *hb) {
+    if (strcmp(medal, "Platinum") == 0) {
+        *r = 0.87; *g = 0.92; *b = 0.96;   // pale icy silver-blue
+        *dr = 0.62; *dg = 0.68; *db = 0.74;
+        *hr = 1.00; *hg = 1.00; *hb = 1.00;
+    } else if (strcmp(medal, "Gold") == 0) {
+        *r = 1.00; *g = 0.84; *b = 0.15;
+        *dr = 0.78; *dg = 0.58; *db = 0.06;
+        *hr = 1.00; *hg = 0.97; *hb = 0.70;
+    } else if (strcmp(medal, "Silver") == 0) {
+        *r = 0.80; *g = 0.82; *b = 0.85;
+        *dr = 0.55; *dg = 0.57; *db = 0.60;
+        *hr = 1.00; *hg = 1.00; *hb = 1.00;
+    } else { // Bronze
+        *r = 0.80; *g = 0.50; *b = 0.20;
+        *dr = 0.55; *dg = 0.32; *db = 0.10;
+        *hr = 1.00; *hg = 0.80; *hb = 0.55;
+    }
+}
+
+// Draws a simple round medal: a short ribbon stub above a shaded disc with
+// a highlight arc, colored per-tier via ff_medal_colors.
+static void ff_draw_medal(cairo_t *cr, double cx, double cy, double radius, const char *medal) {
+    double r, g, b, dr, dg, db, hr, hg, hb;
+    ff_medal_colors(medal, &r, &g, &b, &dr, &dg, &db, &hr, &hg, &hb);
+
+    // Ribbon stub poking out above the disc.
+    cairo_set_source_rgb(cr, dr, dg, db);
+    cairo_move_to(cr, cx - radius * 0.32, cy - radius * 0.75);
+    cairo_line_to(cr, cx + radius * 0.32, cy - radius * 0.75);
+    cairo_line_to(cr, cx + radius * 0.22, cy - radius * 1.25);
+    cairo_line_to(cr, cx - radius * 0.22, cy - radius * 1.25);
+    cairo_close_path(cr);
+    cairo_fill(cr);
+
+    // Disc body with a radial gradient so it reads as a shiny metal, not a
+    // flat circle.
+    cairo_pattern_t *pat = cairo_pattern_create_radial(
+        cx - radius * 0.30, cy - radius * 0.35, radius * 0.10,
+        cx, cy, radius);
+    cairo_pattern_add_color_stop_rgb(pat, 0.0, hr, hg, hb);
+    cairo_pattern_add_color_stop_rgb(pat, 0.55, r, g, b);
+    cairo_pattern_add_color_stop_rgb(pat, 1.0, dr, dg, db);
+    cairo_set_source(cr, pat);
+    cairo_arc(cr, cx, cy, radius, 0, 2 * M_PI);
+    cairo_fill(cr);
+    cairo_pattern_destroy(pat);
+
+    // Rim
+    cairo_set_source_rgb(cr, dr, dg, db);
+    cairo_set_line_width(cr, radius * 0.08);
+    cairo_arc(cr, cx, cy, radius * 0.94, 0, 2 * M_PI);
+    cairo_stroke(cr);
+}
+
+// All-time high-score persistence: standalone-game only (zenamp's
+// visualizer build doesn't want a score file on disk, just the daily best
+// above), so all of it - state, path resolution, load, save - is gated on
+// FLOPPYSOUND same as the rest of the standalone-only code below.
+#ifdef FLOPPYSOUND
 static int s_ff_alltime_best = 0;    // persisted across runs, loaded from disk on startup
 
 // Where the persistent high score lives. On Windows this is
@@ -162,6 +250,7 @@ static void ff_save_alltime_best(void) {
         fclose(f);
     }
 }
+#endif // FLOPPYSOUND
 static double s_ff_bubble_phase = 0.0;
 static double s_ff_flap_anim = 0.0;  // tail-flap animation clock, ticks while playing
 static int s_ff_fish_palette = 0;    // random new color friend each game
@@ -327,7 +416,9 @@ static void ff_init_background(Visualizer *vis) {
 
 void init_floppy_fish_system(Visualizer *vis) {
     s_ff_best_score = 0;
+#ifdef FLOPPYSOUND
     ff_load_alltime_best();
+#endif
     s_ff_bg_init = false;
     ff_reset(vis);
     ff_init_background(vis);
@@ -509,12 +600,12 @@ void update_floppy_fish(Visualizer *vis, double dt) {
                     s_ff_best_score = s_ff_score;
                     printf("New best score today: %d\n", s_ff_best_score);
                 }
+#ifdef FLOPPYSOUND
                 if (s_ff_score > s_ff_alltime_best) {
                     s_ff_alltime_best = s_ff_score;
                     ff_save_alltime_best();
                     printf("New all-time high score: %d\n", s_ff_alltime_best);
                 }
-#ifdef FLOPPYSOUND
                 vis->sound_score = true;
 #endif
             }
@@ -552,6 +643,7 @@ void update_floppy_fish(Visualizer *vis, double dt) {
         s_ff_fish_y = fish_radius;
         if (s_ff_fish_vel < 0) s_ff_fish_vel = 0.0;
     }
+
 #ifdef FLOPPYSOUND
     if(s_ff_state==FF_GAME_OVER) {
         if(vis->deadcounter<2) vis->deadcounter++;
@@ -1592,22 +1684,46 @@ void draw_floppy_fish(Visualizer *vis, cairo_t *cr) {
 
     } else if (s_ff_state == FF_GAME_OVER) {
         cairo_set_source_rgba(cr, 0.0, 0.0, 0.0, 0.45);
-        cairo_rectangle(cr, w * 0.12, h * 0.35, w * 0.76, h * 0.24);
+        cairo_rectangle(cr, w * 0.12, h * 0.32, w * 0.76, h * 0.30);
         cairo_fill(cr);
 
         cairo_set_source_rgb(cr, 1.0, 1.0, 1.0);
         cairo_set_font_size(cr, h * 0.05);
         const char *msg = "Game Over";
         cairo_text_extents(cr, msg, &ext);
-        cairo_move_to(cr, w * 0.5 - ext.width * 0.5, h * 0.42);
+        cairo_move_to(cr, w * 0.5 - ext.width * 0.5, h * 0.40);
         cairo_show_text(cr, msg);
 
         cairo_set_font_size(cr, h * 0.032);
-        char best_text[50];
+        char best_text[64];
+        const char *medal = ff_medal_for_score(s_ff_score);
+        double score_y = h * 0.48;
+        if (strcmp(medal, "None") == 0) {
+            snprintf(best_text, sizeof(best_text), "Score: %d", s_ff_score);
+            cairo_text_extents(cr, best_text, &ext);
+            cairo_move_to(cr, w * 0.5 - ext.width * 0.5, score_y);
+            cairo_show_text(cr, best_text);
+        } else {
+            snprintf(best_text, sizeof(best_text), "Score: %d", s_ff_score);
+            cairo_text_extents(cr, best_text, &ext);
+            double medal_radius = h * 0.026;
+            double gap = h * 0.02;
+            double total_w = ext.width + gap + medal_radius * 2.0;
+            double start_x = w * 0.5 - total_w * 0.5;
+            cairo_move_to(cr, start_x, score_y);
+            cairo_show_text(cr, best_text);
+            ff_draw_medal(cr, start_x + ext.width + gap + medal_radius,
+                          score_y - ext.height * 0.42, medal_radius, medal);
+        }
+
+#ifdef FLOPPYSOUND
         snprintf(best_text, sizeof(best_text), "Today's Best: %d   All-Time Best: %d",
                  s_ff_best_score, s_ff_alltime_best);
+#else
+        snprintf(best_text, sizeof(best_text), "Today's Best: %d", s_ff_best_score);
+#endif
         cairo_text_extents(cr, best_text, &ext);
-        cairo_move_to(cr, w * 0.5 - ext.width * 0.5, h * 0.52);
+        cairo_move_to(cr, w * 0.5 - ext.width * 0.5, h * 0.54);
         cairo_show_text(cr, best_text);
 
 #ifdef FLOPPYSOUND
@@ -1616,7 +1732,7 @@ void draw_floppy_fish(Visualizer *vis, cairo_t *cr) {
         snprintf(best_text, sizeof(best_text), "Left Click to Restart");
 #endif
         cairo_text_extents(cr, best_text, &ext);
-        cairo_move_to(cr, w * 0.5 - ext.width * 0.5, h * 0.56);
+        cairo_move_to(cr, w * 0.5 - ext.width * 0.5, h * 0.60);
         cairo_show_text(cr, best_text);
 
 
