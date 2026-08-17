@@ -1,4 +1,4 @@
-name: Build Felix Terminal
+name: Build Floppy Fish
 
 on:
   push:
@@ -23,7 +23,7 @@ on:
 
 env:
   PRODUCT_VERSION: "1.0.${{ github.run_number }}.0"
-  UPGRADE_CODE: "B3E7A1D4-2F58-47C3-9A6B-1D4E8F2C5B7A"
+  UPGRADE_CODE: "6e1af3b1-bc07-4f4f-9e5b-b8dd286e6bbd"
 
 jobs:
   build-linux:
@@ -41,30 +41,15 @@ jobs:
         dnf -y install \
           gcc gcc-c++ make \
           SDL2-devel \
-          freetype-devel \
-          glew-devel \
+          cairo-devel \
           pkg-config \
           mingw64-gcc mingw64-gcc-c++ \
+          mingw64-pkg-config \
           mingw64-SDL2 \
-          mingw64-freetype \
-          mingw64-glew \
-          mingw64-libssh2 \
-          mingw64-gtk3 mingw64-gtkmm30 \
-          mingw64-SDL2 mingw64-SDL2_mixer \
-          mingw64-libvorbis mingw64-flac \
-          mingw64-opus mingw64-opusfile \
-          mingw64-taglib.noarch \
-          mingw64-glew \
-          mingw64-gmp \
-          mingw64-gstreamer1 \
-          mingw64-gstreamer1-plugins-base \
+          mingw64-cairo \
           wine \
           zip unzip \
           ImageMagick \
-          libssh2-devel \
-          libwebp-devel \
-          mingw64-libwebp \
-          mingw64-wxWidgets3 \
           xxd
 
     - name: Build Windows Executable
@@ -89,23 +74,12 @@ jobs:
         cp ../../README.md . 2>/dev/null || true
         cp ../../LICENSE.md . 2>/dev/null || true
         cp ../../icon.png . 2>/dev/null || true
-        # FelixTerminalGUI.exe depends on flt.exe for backend functionality
-        # Both are required for the application to work
-        
-        # Verify both executables exist
-        if [ ! -f "FelixTerminalGUI.exe" ]; then
-          echo "❌ ERROR: FelixTerminalGUI.exe not found!"
-          ls -la
+
+        if [ ! -f "floppyfish.exe" ]; then
+          echo "❌ floppyfish.exe not found — build failed"
           exit 1
         fi
-        
-        if [ ! -f "flt.exe" ]; then
-          echo "❌ ERROR: flt.exe not found!"
-          ls -la
-          exit 1
-        fi
-        
-        echo "✅ Both FelixTerminalGUI.exe and flt.exe found"
+        echo "✅ floppyfish.exe found"
 
         DLL_SOURCE="/usr/x86_64-w64-mingw32/sys-root/mingw/bin"
 
@@ -114,26 +88,30 @@ jobs:
           libstdc++-6.dll \
           libwinpthread-1.dll \
           SDL2.dll \
-          libfreetype-6.dll \
-          glew32.dll \
-          zlib1.dll \
+          libcairo-2.dll \
+          libpixman-1-0.dll \
           libpng16-16.dll \
-          libbz2-1.dll; do
+          libfreetype-6.dll \
+          libfontconfig-1.dll \
+          libexpat-1.dll \
+          zlib1.dll; do
           if [ -f "$DLL_SOURCE/$dll" ]; then
             cp "$DLL_SOURCE/$dll" .
+          else
+            echo "⚠️  $dll not found at $DLL_SOURCE"
           fi
         done
 
         echo "📦 Portable package contents:"
         ls -lh *.exe *.dll 2>/dev/null || true
-        
-        zip -r ../../FelixTerminal-Portable.zip ./*
+
+        zip -r ../../FloppyFish-Portable.zip ./*
 
     - name: Upload Build Artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: felix-terminal-build
-        path: FelixTerminal-Portable.zip
+        name: floppy-fish-build
+        path: FloppyFish-Portable.zip
         retention-days: 7
 
   build-msi-windows:
@@ -148,12 +126,12 @@ jobs:
     - name: Download Build Artifacts
       uses: actions/download-artifact@v4
       with:
-        name: felix-terminal-build
+        name: floppy-fish-build
         path: .
 
     - name: Extract Build Files
       run: |
-        Expand-Archive -Path "FelixTerminal-Portable.zip" -DestinationPath "artifacts/build/windows/" -Force
+        Expand-Archive -Path "FloppyFish-Portable.zip" -DestinationPath "artifacts/build/windows/" -Force
 
     - name: Setup WiX Toolset
       run: |
@@ -178,25 +156,25 @@ jobs:
         <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
 
           <Product Id="*"
-                   Name="Felix Terminal"
+                   Name="Floppy Fish"
                    Language="1033"
                    Version="$version"
-                   Manufacturer="Felix Terminal"
+                   Manufacturer="Floppy Fish"
                    UpgradeCode="$upgradeCode">
 
             <Package InstallerVersion="500" Compressed="yes" InstallScope="perMachine"
-                     Description="Felix Terminal - OpenGL-accelerated terminal emulator"
-                     Manufacturer="Felix Terminal" />
+                     Description="Floppy Fish - SDL Accelerated Video Game"
+                     Manufacturer="Floppy Fish" />
 
-            <MajorUpgrade DowngradeErrorMessage="A newer version of Felix Terminal is already installed."
+            <MajorUpgrade DowngradeErrorMessage="A newer version of Floppy Fish is already installed."
                           Schedule="afterInstallInitialize" />
             <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
 
-            <Icon Id="FelixIcon" SourceFile="icon.ico" />
-            <Property Id="ARPPRODUCTICON" Value="FelixIcon" />
-            <Property Id="ARPHELPLINK" Value="https://github.com/felix-terminal" />
-            <Property Id="ARPURLINFOABOUT" Value="https://github.com/felix-terminal" />
-            <Property Id="ARPCOMMENTS" Value="A fast OpenGL-accelerated terminal emulator for Windows" />
+            <Icon Id="FloppyIcon" SourceFile="icon.ico" />
+            <Property Id="ARPPRODUCTICON" Value="FloppyIcon" />
+            <Property Id="ARPHELPLINK" Value="https://github.com/jasonbrianhall/floppy_fish" />
+            <Property Id="ARPURLINFOABOUT" Value="https://github.com/jasonbrianhall/floppy_fish" />
+            <Property Id="ARPCOMMENTS" Value="An avoid the obstacles SDL built video game" />
 
             <WixVariable Id="WixUILicenseRtf" Value="License.rtf" />
             <Property Id="WIXUI_INSTALLDIR" Value="INSTALLFOLDER" />
@@ -204,10 +182,10 @@ jobs:
 
             <Directory Id="TARGETDIR" Name="SourceDir">
               <Directory Id="ProgramFiles64Folder">
-                <Directory Id="INSTALLFOLDER" Name="Felix Terminal" />
+                <Directory Id="INSTALLFOLDER" Name="Floppy Fish" />
               </Directory>
               <Directory Id="ProgramMenuFolder">
-                <Directory Id="ApplicationProgramsFolder" Name="Felix Terminal" />
+                <Directory Id="ApplicationProgramsFolder" Name="Floppy Fish" />
               </Directory>
               <Directory Id="DesktopFolder" />
             </Directory>
@@ -215,22 +193,17 @@ jobs:
             <!-- Main executable and all DLL dependencies -->
             <DirectoryRef Id="INSTALLFOLDER">
               <Component Id="MainExecutable" Guid="C1D2E3F4-A5B6-4C7D-8E9F-0A1B2C3D4E5F" Win64="yes">
-                <File Id="felixTerminalGUI_exe" Name="FelixTerminalGUI.exe" Source="FelixTerminalGUI.exe" />
-                <File Id="flt_exe" Name="flt.exe" Source="flt.exe" />
+                <File Id="floppyfish_exe" Name="floppyfish.exe" Source="floppyfish.exe" KeyPath="yes" />
 
-                <!-- Start Menu shortcuts (non-advertised, point at ApplicationProgramsFolder) -->
+                <!-- Start Menu shortcut -->
                 <Shortcut Id="StartMenuShortcut"
                           Directory="ApplicationProgramsFolder"
-                          Name="Felix Terminal"
-                          Description="Felix Terminal - OpenGL Terminal Emulator"
-                          Target="[INSTALLFOLDER]FelixTerminalGUI.exe"
+                          Name="Floppy Fish"
+                          Description="Floppy Fish - SDL Accelerated Video Game"
+                          Target="[INSTALLFOLDER]floppyfish.exe"
                           WorkingDirectory="INSTALLFOLDER"
-                          Icon="FelixIcon"
+                          Icon="FloppyIcon"
                           IconIndex="0" />
-
-                <!-- Registry KeyPath required for non-advertised shortcuts -->
-                <RegistryValue Root="HKCU" Key="Software\FelixTerminal" Name="installed"
-                               Type="integer" Value="1" KeyPath="yes" />
 
                 <!-- DLL dependencies -->
                 $($dllEntries -join "`r`n")
@@ -241,7 +214,7 @@ jobs:
             <DirectoryRef Id="ApplicationProgramsFolder">
               <Component Id="StartMenuFolder" Guid="D2E3F4A5-B6C7-4D8E-9F0A-1B2C3D4E5F6A" Win64="yes">
                 <RemoveFolder Id="ApplicationProgramsFolderRemove" On="uninstall" />
-                <RegistryValue Root="HKCU" Key="Software\FelixTerminal\Shortcuts" Name="StartMenu"
+                <RegistryValue Root="HKCU" Key="Software\FloppyFish\Shortcuts" Name="StartMenu"
                                Type="integer" Value="1" KeyPath="yes" />
               </Component>
             </DirectoryRef>
@@ -252,19 +225,19 @@ jobs:
                 <Condition>DESKTOP_SHORTCUT=1</Condition>
                 <Shortcut Id="DesktopShortcutMain"
                           Directory="DesktopFolder"
-                          Name="Felix Terminal"
-                          Description="Felix Terminal - OpenGL Terminal Emulator"
-                          Target="[INSTALLFOLDER]FelixTerminalGUI.exe"
+                          Name="Floppy Fish"
+                          Description="Floppy Fish - SDL Accelerated Video Game"
+                          Target="[INSTALLFOLDER]floppyfish.exe"
                           WorkingDirectory="INSTALLFOLDER"
-                          Icon="FelixIcon"
+                          Icon="FloppyIcon"
                           IconIndex="0" />
 
-                <RegistryValue Root="HKCU" Key="Software\FelixTerminal\Shortcuts" Name="Desktop"
+                <RegistryValue Root="HKCU" Key="Software\FloppyFish\Shortcuts" Name="Desktop"
                                Type="integer" Value="1" KeyPath="yes" />
               </Component>
             </DirectoryRef>
 
-            <Feature Id="MainFeature" Title="Felix Terminal" Level="1">
+            <Feature Id="MainFeature" Title="Floppy Fish" Level="1">
               <ComponentRef Id="MainExecutable" />
               <ComponentRef Id="StartMenuFolder" />
               <ComponentRef Id="DesktopShortcut" />
@@ -280,7 +253,7 @@ jobs:
 
           </Product>
         </Wix>
-        "@ | Out-File -FilePath "felix_terminal.wxs" -Encoding UTF8
+        "@ | Out-File -FilePath "floppy_fish.wxs" -Encoding UTF8
 
         # Create RTF license if not present
         if (-not (Test-Path "License.rtf")) {
@@ -291,7 +264,7 @@ jobs:
         \pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\pardirnatural\partightenfactor0
         \f0\fs20 \cf0 MIT License\
         \
-        Copyright (c) 2025 Felix Terminal Contributors\
+        Copyright (c) 2025 Floppy Fish Contributors\
         \
         Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:\
         \
@@ -302,15 +275,15 @@ jobs:
         }
 
         Write-Host "Compiling WXS..."
-        & candle.exe -out "felix_terminal.wixobj" -arch x64 "felix_terminal.wxs"
+        & candle.exe -out "floppy_fish.wixobj" -arch x64 "floppy_fish.wxs"
         if ($LASTEXITCODE -ne 0) { Write-Error "Candle failed"; exit 1 }
 
         Write-Host "Linking MSI..."
-        & light.exe -out "FelixTerminal.msi" -ext WixUIExtension -ext WixUtilExtension "felix_terminal.wixobj"
+        & light.exe -out "FloppyFish.msi" -ext WixUIExtension -ext WixUtilExtension "floppy_fish.wixobj"
         if ($LASTEXITCODE -ne 0) { Write-Error "Light failed"; exit 1 }
 
-        if (Test-Path "FelixTerminal.msi") {
-          Write-Host "✅ MSI created: FelixTerminal.msi ($((Get-Item 'FelixTerminal.msi').Length) bytes)"
+        if (Test-Path "FloppyFish.msi") {
+          Write-Host "✅ MSI created: FloppyFish.msi ($((Get-Item 'FloppyFish.msi').Length) bytes)"
         } else {
           Write-Error "❌ MSI not created"; exit 1
         }
@@ -318,8 +291,8 @@ jobs:
     - name: Upload MSI
       uses: actions/upload-artifact@v4
       with:
-        name: FelixTerminal.msi
-        path: artifacts/build/windows/FelixTerminal.msi
+        name: FloppyFish.msi
+        path: artifacts/build/windows/FloppyFish.msi
         retention-days: 7
 
   build-msix-windows:
@@ -334,12 +307,12 @@ jobs:
     - name: Download Build Artifacts
       uses: actions/download-artifact@v4
       with:
-        name: felix-terminal-build
+        name: floppy-fish-build
         path: .
 
     - name: Extract Build Files
       run: |
-        Expand-Archive -Path "FelixTerminal-Portable.zip" -DestinationPath "msix-source\" -Force
+        Expand-Archive -Path "FloppyFish-Portable.zip" -DestinationPath "msix-source\" -Force
 
     - name: Prepare MSIX Package Structure
       run: |
@@ -348,17 +321,12 @@ jobs:
 
         Copy-Item "msix-source/*" -Destination "msix-package/Files/" -Recurse -Force
 
-        if (-not (Test-Path "msix-package/Files/FelixTerminalGUI.exe")) {
-          Write-Error "FelixTerminalGUI.exe not found in package!"
+        if (-not (Test-Path "msix-package/Files/floppyfish.exe")) {
+          Write-Error "floppyfish.exe not found in package!"
           exit 1
         }
 
-        if (-not (Test-Path "msix-package/Files/flt.exe")) {
-          Write-Error "flt.exe not found in package!"
-          exit 1
-        }
-
-        Write-Host "✅ Both FelixTerminalGUI.exe and flt.exe verified in MSIX package"
+        Write-Host "✅ floppyfish.exe verified in MSIX package"
         Write-Host "📦 MSIX Files directory contents:"
         Get-ChildItem "msix-package/Files/" -File | ForEach-Object { 
           $size = "{0:N0}" -f $_.Length
@@ -383,22 +351,22 @@ jobs:
         & magick "$iconPath" -resize 100x100 "msix-package/Assets/StoreLogo.scale-200.png"
 
         # Square 44x44 (small tile)
-        & magick "$iconPath" -resize 44x44 "msix-package/Assets/FelixTerminal44x44.scale-100.png"
-        & magick "$iconPath" -resize 55x55 "msix-package/Assets/FelixTerminal44x44.scale-125.png"
-        & magick "$iconPath" -resize 66x66 "msix-package/Assets/FelixTerminal44x44.scale-150.png"
-        & magick "$iconPath" -resize 88x88 "msix-package/Assets/FelixTerminal44x44.scale-200.png"
+        & magick "$iconPath" -resize 44x44 "msix-package/Assets/FloppyFish44x44.scale-100.png"
+        & magick "$iconPath" -resize 55x55 "msix-package/Assets/FloppyFish44x44.scale-125.png"
+        & magick "$iconPath" -resize 66x66 "msix-package/Assets/FloppyFish44x44.scale-150.png"
+        & magick "$iconPath" -resize 88x88 "msix-package/Assets/FloppyFish44x44.scale-200.png"
 
         # Square 150x150 (main tile)
-        & magick "$iconPath" -resize 150x150 "msix-package/Assets/FelixTerminalLogo.scale-100.png"
-        & magick "$iconPath" -resize 188x188 "msix-package/Assets/FelixTerminalLogo.scale-125.png"
-        & magick "$iconPath" -resize 225x225 "msix-package/Assets/FelixTerminalLogo.scale-150.png"
-        & magick "$iconPath" -resize 300x300 "msix-package/Assets/FelixTerminalLogo.scale-200.png"
+        & magick "$iconPath" -resize 150x150 "msix-package/Assets/FloppyFishLogo.scale-100.png"
+        & magick "$iconPath" -resize 188x188 "msix-package/Assets/FloppyFishLogo.scale-125.png"
+        & magick "$iconPath" -resize 225x225 "msix-package/Assets/FloppyFishLogo.scale-150.png"
+        & magick "$iconPath" -resize 300x300 "msix-package/Assets/FloppyFishLogo.scale-200.png"
 
         # Wide 310x150 (wide tile)
-        & magick "$iconPath" -resize 150x150 -background "#0d1117" -gravity center -extent 310x150 "msix-package/Assets/FelixTerminalWide.scale-100.png"
-        & magick "$iconPath" -resize 188x188 -background "#0d1117" -gravity center -extent 388x188 "msix-package/Assets/FelixTerminalWide.scale-125.png"
-        & magick "$iconPath" -resize 225x225 -background "#0d1117" -gravity center -extent 465x225 "msix-package/Assets/FelixTerminalWide.scale-150.png"
-        & magick "$iconPath" -resize 300x300 -background "#0d1117" -gravity center -extent 620x300 "msix-package/Assets/FelixTerminalWide.scale-200.png"
+        & magick "$iconPath" -resize 150x150 -background "#0d1117" -gravity center -extent 310x150 "msix-package/Assets/FloppyFishWide.scale-100.png"
+        & magick "$iconPath" -resize 188x188 -background "#0d1117" -gravity center -extent 388x188 "msix-package/Assets/FloppyFishWide.scale-125.png"
+        & magick "$iconPath" -resize 225x225 -background "#0d1117" -gravity center -extent 465x225 "msix-package/Assets/FloppyFishWide.scale-150.png"
+        & magick "$iconPath" -resize 300x300 -background "#0d1117" -gravity center -extent 620x300 "msix-package/Assets/FloppyFishWide.scale-200.png"
 
         Write-Host "✅ All Microsoft Store assets created successfully"
 
@@ -412,15 +380,15 @@ jobs:
                  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities">
 
           <Identity
-            Name="JasonBrianHall.FelixTerminal"
+            Name="JasonBrianHall.FloppyFish"
             Publisher="CN=7A3CF65F-504C-42F2-BABD-6A0512A0A017"
             Version="${{ needs.build-linux.outputs.version }}"
             ProcessorArchitecture="x64" />
 
           <Properties>
-            <DisplayName>Felix Terminal</DisplayName>
+            <DisplayName>Floppy Fish</DisplayName>
             <PublisherDisplayName>Jason Brian Hall</PublisherDisplayName>
-            <Description>A fast OpenGL-accelerated terminal emulator for Windows.</Description>
+            <Description>An avoid the obstacles SDL built video game.</Description>
             <Logo>Assets\StoreLogo.scale-100.png</Logo>
           </Properties>
 
@@ -433,20 +401,20 @@ jobs:
           </Resources>
 
           <Applications>
-            <Application Id="FelixTerminal" Executable="Files\FelixTerminalGUI.exe" EntryPoint="Windows.FullTrustApplication">
-              <uap:VisualElements DisplayName="Felix Terminal"
-                                  Description="A fast OpenGL-accelerated terminal emulator for Windows."
-                                  Square150x150Logo="Assets\FelixTerminalLogo.scale-100.png"
-                                  Square44x44Logo="Assets\FelixTerminal44x44.scale-100.png"
+            <Application Id="FloppyFish" Executable="Files\floppyfish.exe" EntryPoint="Windows.FullTrustApplication">
+              <uap:VisualElements DisplayName="Floppy Fish"
+                                  Description="An avoid the obstacles SDL built video game."
+                                  Square150x150Logo="Assets\FloppyFishLogo.scale-100.png"
+                                  Square44x44Logo="Assets\FloppyFish44x44.scale-100.png"
                                   BackgroundColor="#0d1117">
-                <uap:DefaultTile Wide310x150Logo="Assets\FelixTerminalWide.scale-100.png"
-                                 ShortName="Felix Terminal">
+                <uap:DefaultTile Wide310x150Logo="Assets\FloppyFishWide.scale-100.png"
+                                 ShortName="Floppy Fish">
                   <uap:ShowNameOnTiles>
                     <uap:ShowOn Tile="square150x150Logo"/>
                     <uap:ShowOn Tile="wide310x150Logo"/>
                   </uap:ShowNameOnTiles>
                 </uap:DefaultTile>
-                <uap:SplashScreen Image="Assets\FelixTerminalLogo.scale-100.png" />
+                <uap:SplashScreen Image="Assets\FloppyFishLogo.scale-100.png" />
               </uap:VisualElements>
             </Application>
           </Applications>
@@ -477,12 +445,12 @@ jobs:
         }
 
         Write-Host "Using MakeAppx at: $makeAppxPath"
-        & "$makeAppxPath" pack /d "msix-package" /p "FelixTerminal.msix" /o
+        & "$makeAppxPath" pack /d "msix-package" /p "FloppyFish.msix" /o
 
         if ($LASTEXITCODE -ne 0) { Write-Error "MSIX creation failed"; exit 1 }
 
-        if (Test-Path "FelixTerminal.msix") {
-          Write-Host "✅ MSIX created: FelixTerminal.msix ($((Get-Item 'FelixTerminal.msix').Length) bytes)"
+        if (Test-Path "FloppyFish.msix") {
+          Write-Host "✅ MSIX created: FloppyFish.msix ($((Get-Item 'FloppyFish.msix').Length) bytes)"
           Write-Host "Package is unsigned and ready for Microsoft Store submission"
         } else {
           Write-Error "❌ MSIX not created"; exit 1
@@ -491,8 +459,8 @@ jobs:
     - name: Upload MSIX
       uses: actions/upload-artifact@v4
       with:
-        name: FelixTerminal.msix
-        path: FelixTerminal.msix
+        name: FloppyFish.msix
+        path: FloppyFish.msix
         retention-days: 7
 
   create-release:
@@ -506,28 +474,28 @@ jobs:
     - name: Download MSI Artifact
       uses: actions/download-artifact@v4
       with:
-        name: FelixTerminal.msi
+        name: FloppyFish.msi
         path: release
 
     - name: Download MSIX Artifact
       uses: actions/download-artifact@v4
       with:
-        name: FelixTerminal.msix
+        name: FloppyFish.msix
         path: release
 
     - name: Download Portable Artifact
       uses: actions/download-artifact@v4
       with:
-        name: felix-terminal-build
+        name: floppy-fish-build
         path: release
 
     - name: Create GitHub Release
       uses: softprops/action-gh-release@v2
       with:
         files: |
-          release/FelixTerminal.msi
-          release/FelixTerminal.msix
-          release/FelixTerminal-Portable.zip
+          release/FloppyFish.msi
+          release/FloppyFish.msix
+          release/FloppyFish-Portable.zip
         tag_name: ${{ github.ref == 'refs/heads/main' && format('v{0}', github.run_number) || format('dev-v{0}', github.run_number) }}
         name: ${{ github.ref == 'refs/heads/main' && format('Release v{0}', github.run_number) || format('Dev Build v{0}', github.run_number) }}
         draft: false
@@ -540,17 +508,17 @@ jobs:
           **Commit:** ${{ github.sha }}
           **Build:** #${{ github.run_number }}
 
-          ### 🖥️ Felix Terminal
-          A fast OpenGL-accelerated terminal emulator for Windows and Linux.
+          ### 🐟 Floppy Fish
+          An avoid-the-obstacles SDL/cairo accelerated video game for Windows and Linux.
 
           ### 📦 Downloads
-          - **FelixTerminal.msi** — Windows installer with Start Menu and optional desktop shortcuts
-          - **FelixTerminal.msix** — Unsigned package ready for Microsoft Store submission
-          - **FelixTerminal-Portable.zip** — Portable version, no installation required
+          - **FloppyFish.msi** — Windows installer with Start Menu and optional desktop shortcuts
+          - **FloppyFish.msix** — Unsigned package ready for Microsoft Store submission
+          - **FloppyFish-Portable.zip** — Portable version, no installation required
 
           ### ✨ Installer Features (MSI)
-          - ✅ Start Menu shortcuts for cmd.exe and PowerShell
-          - ✅ Optional desktop shortcuts for both launchers
+          - ✅ Start Menu shortcut
+          - ✅ Optional desktop shortcut
           - ✅ Custom installation directory
           - ✅ Proper uninstall support
           - ✅ Add/Remove Programs integration
@@ -572,13 +540,13 @@ jobs:
           | Code Signing Required | ✅ | Store | ❌ |
 
           ### 🚀 Usage
-          Launch **FelixTerminalGUI.exe** from the Start Menu or desktop shortcut. FelixTerminalGUI requires **flt.exe** (the backend) to be in the same directory for full functionality.
+          Launch **floppyfish.exe** from the Start Menu or desktop shortcut.
 
           ### 🎯 Silent Installation (MSI)
           ```cmd
-          msiexec /i FelixTerminal.msi /quiet /norestart
-          msiexec /i FelixTerminal.msi /quiet /norestart DESKTOP_SHORTCUT=1
-          msiexec /x FelixTerminal.msi /quiet /norestart
+          msiexec /i FloppyFish.msi /quiet /norestart
+          msiexec /i FloppyFish.msi /quiet /norestart DESKTOP_SHORTCUT=1
+          msiexec /x FloppyFish.msi /quiet /norestart
           ```
 
           ---
