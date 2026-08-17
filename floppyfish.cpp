@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 
 // All-time high-score persistence is a standalone-game feature (needs a
 // writable per-user location on disk) - not used when this file is built
@@ -124,7 +125,7 @@ static double s_ff_rotation = 0.0;
 static FFPipe s_ff_pipes[FF_MAX_PIPES];
 static double s_ff_spawn_timer = 0.0;
 static int s_ff_score = 0;
-static int s_ff_best_score = 0;      // "today's" best - resets each time the game process starts
+static int s_ff_best_score = 0;      // "today's" best - persisted, but expires at local midnight (see ff_load_daily_best)
 
 // Score thresholds for the trinket shown on the Game Over screen - below
 // sea shell is "no trinket", then each tier takes real, escalating skill.
@@ -333,8 +334,8 @@ static int s_ff_alltime_best = 0;    // persisted across runs, loaded from disk 
 
 // Where the persistent high score lives. On Windows this is
 // %APPDATA%\FloppyFish\highscore.txt (the standard per-user app-data
-// location); everywhere else it falls back to a dotfile in $HOME so the
-// same code still works for local/dev builds.
+// location); everywhere else it lives in ~/.floppyfish/ (created if it
+// doesn't exist yet) so the same code still works for local/dev builds.
 static void ff_highscore_path(char *buf, size_t bufsize) {
 #ifdef _WIN32
     const char *appdata = getenv("APPDATA");
@@ -346,7 +347,10 @@ static void ff_highscore_path(char *buf, size_t bufsize) {
 #else
     const char *home = getenv("HOME");
     if (!home) home = ".";
-    snprintf(buf, bufsize, "%s/.floppyfish_highscore", home);
+    char dir[400];
+    snprintf(dir, sizeof(dir), "%s/.floppyfish", home);
+    FF_MKDIR(dir);
+    snprintf(buf, bufsize, "%s/floppyfish_highscore", dir);
 #endif
 }
 
@@ -368,6 +372,79 @@ static void ff_save_alltime_best(void) {
     FILE *f = fopen(path, "w");
     if (f) {
         fprintf(f, "%d\n", s_ff_alltime_best);
+        fclose(f);
+    }
+}
+
+// Today's best also persists now, alongside the all-time one, but expires
+// at midnight instead of lasting forever. The save file stores the score
+// together with a timestamp for midnight (00:00:00 local time) of the day
+// it was set; loading compares that stamp against *today's* midnight, and
+// only restores the score if they match. If the file is from any earlier
+// day the stamp won't match and the daily best just stays at the 0 it was
+// already initialized to - no separate "is it stale" flag needed, the
+// timestamp comparison is the staleness check.
+static void ff_daily_highscore_path(char *buf, size_t bufsize) {
+#ifdef _WIN32
+    const char *appdata = getenv("APPDATA");
+    if (!appdata) appdata = ".";
+    char dir[400];
+    snprintf(dir, sizeof(dir), "%s\\FloppyFish", appdata);
+    FF_MKDIR(dir);
+    snprintf(buf, bufsize, "%s\\dailyhighscore.txt", dir);
+#else
+    const char *home = getenv("HOME");
+    if (!home) home = ".";
+    char dir[400];
+    snprintf(dir, sizeof(dir), "%s/.floppyfish", home);
+    FF_MKDIR(dir);
+    snprintf(buf, bufsize, "%s/floppyfish_daily_highscore", dir);
+#endif
+}
+
+// Midnight (00:00:00 local time) of "today". Used both to stamp a freshly
+// saved daily best and, on load, to check whether a previously saved one
+// still applies.
+static time_t ff_today_midnight(void) {
+    time_t now = time(NULL);
+    struct tm tmnow;
+#ifdef _WIN32
+    localtime_s(&tmnow, &now);
+#else
+    localtime_r(&now, &tmnow);
+#endif
+    tmnow.tm_hour = 0;
+    tmnow.tm_min = 0;
+    tmnow.tm_sec = 0;
+    tmnow.tm_isdst = -1; // let mktime work out DST for this date on its own
+    return mktime(&tmnow);
+}
+
+static void ff_load_daily_best(void) {
+    char path[512];
+    ff_daily_highscore_path(path, sizeof(path));
+    FILE *f = fopen(path, "r");
+    if (!f) return;
+    long saved_midnight = 0;
+    int saved_score = 0;
+    bool ok = (fscanf(f, "%ld %d", &saved_midnight, &saved_score) == 2);
+    fclose(f);
+    if (!ok) return;
+
+    if ((time_t)saved_midnight == ff_today_midnight()) {
+        s_ff_best_score = saved_score;
+        printf("Today's high score (loaded): %d\n", s_ff_best_score);
+    } else {
+        printf("Saved daily high score is from a previous day - resetting to 0\n");
+    }
+}
+
+static void ff_save_daily_best(void) {
+    char path[512];
+    ff_daily_highscore_path(path, sizeof(path));
+    FILE *f = fopen(path, "w");
+    if (f) {
+        fprintf(f, "%ld %d\n", (long)ff_today_midnight(), s_ff_best_score);
         fclose(f);
     }
 }
@@ -593,6 +670,7 @@ void init_floppy_fish_system(Visualizer *vis) {
     s_ff_best_score = 0;
 #ifdef FLOPPYSOUND
     ff_load_alltime_best();
+    ff_load_daily_best(); // overrides s_ff_best_score above if today's save is still valid
 #endif
     s_ff_bg_init = false;
     ff_reset(vis);
@@ -834,6 +912,9 @@ void update_floppy_fish(Visualizer *vis, double dt) {
                 if (s_ff_score > s_ff_best_score) {
                     s_ff_best_score = s_ff_score;
                     printf("New best score today: %d\n", s_ff_best_score);
+#ifdef FLOPPYSOUND
+                    ff_save_daily_best();
+#endif
                 }
 #ifdef FLOPPYSOUND
                 if (s_ff_score > s_ff_alltime_best) {
