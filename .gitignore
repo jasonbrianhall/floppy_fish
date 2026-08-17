@@ -1,0 +1,12 @@
+# Ignore everything
+*
+
+# Allow directories (Git needs this to recurse)
+!*/
+
+# Allow specific file types
+!*.cpp
+!*.h
+!Makefile
+!*.md
+
