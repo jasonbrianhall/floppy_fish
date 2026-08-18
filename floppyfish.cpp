@@ -31,15 +31,16 @@
 //
 // All the per-theme obstacle art, sky, floor, and floor decoration live in
 // floppyfish_reef.cpp / floppyfish_ship.cpp / floppyfish_cave.cpp /
-// floppyfish_atlantis.cpp (see floppyfish_common.h for the shared
-// contract). This file owns everything theme-agnostic: game state,
-// physics, collision, background critters, the player fish, and the UI.
+// floppyfish_atlantis.cpp / floppyfish_rainbow.cpp (see floppyfish_common.h
+// for the shared contract). This file owns everything theme-agnostic: game
+// state, physics, collision, background critters, the player fish, and the UI.
 
 #define FF_MAX_PIPES 8
 #define FF_BG_FISH_COUNT 7
 
-// Four visual themes the run cycles through as the fish travels: coral
-// reef, a sunken pirate ship, a dark cave, and the ruins of Atlantis.
+// Five visual themes the run cycles through as the fish travels: coral
+// reef, a sunken pirate ship, a dark cave, the ruins of Atlantis, and a
+// sky-high rainbow realm.
 // s_ff_world_x is the total scroll distance covered so far (reset each run,
 // paused unless actively playing) and picks which theme zone the camera is
 // currently in. Zone length and the crossfade band between zones are both
@@ -476,8 +477,8 @@ static cairo_font_face_t *s_ff_font_face = NULL;
 // ff_ensure_theme_caches. Everything that actually animates (bubbles, sand
 // ripples, etc.) still gets drawn live on top of these every frame; only
 // the expensive full-canvas painting gets reused instead of redone.
-static cairo_surface_t *s_ff_sky_cache[FF_THEME_COUNT] = {NULL, NULL, NULL, NULL};
-static cairo_surface_t *s_ff_floor_cache[FF_THEME_COUNT] = {NULL, NULL, NULL, NULL};
+static cairo_surface_t *s_ff_sky_cache[FF_THEME_COUNT] = {NULL, NULL, NULL, NULL, NULL};
+static cairo_surface_t *s_ff_floor_cache[FF_THEME_COUNT] = {NULL, NULL, NULL, NULL, NULL};
 static double s_ff_cache_w = -1.0, s_ff_cache_h = -1.0; // canvas size the caches above were built for
 static void ff_free_theme_caches(); // defined near draw_floppy_fish, used by shutdown below
 
@@ -522,16 +523,19 @@ static double s_ff_shark_scale = 1.0; // most passes are medium-sized; occasiona
 
 // Another rare guest, same cadence as the shark but themed to match
 // whatever's currently on screen: a mermaid drifts through during the
-// Atlantis zones, a diver during reef/ship/cave. Which one it is gets
-// decided once, at spawn time (see ff_spawn_guest), and holds for that
-// guest's whole pass across the tank.
+// Atlantis zones, a unicorn during the rainbow zones, a diver everywhere
+// else (reef/ship/cave). Which one it is gets decided once, at spawn time
+// (see ff_spawn_guest), and holds for that guest's whole pass across the
+// tank.
+typedef enum { FF_GUEST_DIVER = 0, FF_GUEST_MERMAID = 1, FF_GUEST_UNICORN = 2 } FFGuestKind;
+
 static bool s_ff_guest_active = false;
 static double s_ff_guest_wait = 0.0;
 static double s_ff_guest_x = 0.0;
 static double s_ff_guest_y = 0.0;
 static double s_ff_guest_speed = 0.0;
 static int s_ff_guest_dir = -1;
-static bool s_ff_guest_is_mermaid = false;
+static FFGuestKind s_ff_guest_kind = FF_GUEST_DIVER;
 
 static const double FF_FISH_X_FRAC = 0.30;
 
@@ -609,11 +613,12 @@ static void ff_spawn_shark(Visualizer *vis) {
     s_ff_shark_active = true;
 }
 
-// Sends the mermaid-or-diver guest across, same way as the shark. Which
-// silhouette it is gets picked from whichever theme currently dominates
-// the screen (s_ff_world_x, same lookup ff_spawn_pipe uses for obstacles),
-// so a diver never turns up over the Atlantis ruins and the mermaid never
-// turns up over a coral reef.
+// Sends the mermaid/diver/unicorn guest across, same way as the shark.
+// Which silhouette it is gets picked from whichever theme currently
+// dominates the screen (s_ff_world_x, same lookup ff_spawn_pipe uses for
+// obstacles), so a diver never turns up over the Atlantis ruins, the
+// mermaid never turns up over a coral reef, and the unicorn only ever
+// turns up over the rainbow realm.
 static void ff_spawn_guest(Visualizer *vis) {
     int dir = (rand() % 2 == 0) ? 1 : -1;
     s_ff_guest_dir = dir;
@@ -630,7 +635,9 @@ static void ff_spawn_guest(Visualizer *vis) {
     int tf, tt; double bt;
     ff_theme_at(s_ff_world_x, zone_len, trans_len, &tf, &tt, &bt);
     int dominant = (bt > 0.5) ? tt : tf;
-    s_ff_guest_is_mermaid = (dominant == FF_THEME_ATLANTIS);
+    s_ff_guest_kind = (dominant == FF_THEME_ATLANTIS) ? FF_GUEST_MERMAID
+                     : (dominant == FF_THEME_RAINBOW)  ? FF_GUEST_UNICORN
+                                                        : FF_GUEST_DIVER;
 
     s_ff_guest_active = true;
 }
@@ -684,7 +691,7 @@ static void ff_init_background(Visualizer *vis) {
     // Shark stays off-screen for a while after launch before its first pass.
     s_ff_shark_active = false;
     s_ff_shark_wait = 12.0 + 15.0 * ((double)rand() / RAND_MAX);
-    // Same for the mermaid/diver guest, on its own independent cadence.
+    // Same for the mermaid/diver/unicorn guest, on its own independent cadence.
     s_ff_guest_active = false;
     s_ff_guest_wait = 10.0 + 14.0 * ((double)rand() / RAND_MAX);
     // Place patches one at a time so each new one can avoid the ones
@@ -910,8 +917,8 @@ void update_floppy_fish(Visualizer *vis, double dt) {
         }
     }
 
-    // Mermaid/diver guest: same rare-pass pattern as the shark, independent
-    // timer so the two don't line up.
+    // Mermaid/diver/unicorn guest: same rare-pass pattern as the shark,
+    // independent timer so the two don't line up.
     if (s_ff_guest_active) {
         s_ff_guest_x += s_ff_guest_dir * s_ff_guest_speed * dt;
         bool guest_off_left  = s_ff_guest_dir < 0 && s_ff_guest_x < -vis->width * 0.20;
@@ -1417,6 +1424,98 @@ static void ff_draw_diver(cairo_t *cr, double x, double y, double t, int dir, do
     }
 }
 
+// The rainbow-zone guest: a galloping unicorn silhouette, built the same
+// way as the shark/mermaid/diver (head/nose toward the swim direction, +x)
+// but with a rainbow-striped mane and tail and a small sparkle trail in
+// place of the diver's bubbles.
+static void ff_draw_unicorn(cairo_t *cr, double x, double y, double t, int dir, double alpha_mult) {
+    if (alpha_mult <= 0.0) return;
+    double bob = sin(t * 3.0) * 4.0;
+
+    cairo_save(cr);
+    cairo_translate(cr, x, y + bob);
+    cairo_scale(cr, (double)dir, 1.0);
+
+    double alpha = 0.48 * alpha_mult;
+    cairo_set_source_rgba(cr, 0.97, 0.97, 1.0, alpha);
+
+    // Body, head toward the swim direction (+x).
+    cairo_move_to(cr, -30, 4);
+    cairo_curve_to(cr, -34, -10, -16, -18, 4, -16);
+    cairo_curve_to(cr, 18, -15, 26, -8, 30, -2);
+    cairo_curve_to(cr, 20, 6, -4, 10, -30, 4);
+    cairo_close_path(cr);
+    cairo_fill(cr);
+
+    // Neck and head.
+    cairo_move_to(cr, 24, -10);
+    cairo_curve_to(cr, 30, -20, 38, -24, 44, -20);
+    cairo_curve_to(cr, 42, -14, 38, -10, 34, -8);
+    cairo_close_path(cr);
+    cairo_fill(cr);
+
+    // Horn - the one detail that unmistakably says "unicorn".
+    cairo_set_source_rgba(cr, 0.95, 0.85, 0.40, alpha);
+    cairo_move_to(cr, 42, -22);
+    cairo_line_to(cr, 47, -35);
+    cairo_line_to(cr, 44, -20);
+    cairo_close_path(cr);
+    cairo_fill(cr);
+
+    // Legs, cantering - front/back pairs offset in phase.
+    double stride = sin(t * 5.0) * 10.0;
+    cairo_set_source_rgba(cr, 0.97, 0.97, 1.0, alpha);
+    cairo_set_line_width(cr, 4.0);
+    cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND);
+    cairo_move_to(cr, 16, 6);  cairo_line_to(cr, 16 + stride, 20);        cairo_stroke(cr);
+    cairo_move_to(cr, -4, 6);  cairo_line_to(cr, -4 - stride, 20);        cairo_stroke(cr);
+    cairo_move_to(cr, -20, 4); cairo_line_to(cr, -20 + stride * 0.7, 18); cairo_stroke(cr);
+    cairo_move_to(cr, -26, 4); cairo_line_to(cr, -26 - stride * 0.7, 18); cairo_stroke(cr);
+
+    // Rainbow mane, trailing back from the neck, and a matching tail off
+    // the rear - six colored strands each, same palette order as the
+    // rainbow theme's pillars so the two visually match.
+    static const double strand_r[6] = {0.90, 0.95, 0.98, 0.30, 0.26, 0.78};
+    static const double strand_g[6] = {0.16, 0.55, 0.85, 0.75, 0.56, 0.38};
+    static const double strand_b[6] = {0.20, 0.16, 0.22, 0.36, 0.95, 0.86};
+
+    cairo_set_line_width(cr, 3.5);
+    double mane_sway = sin(t * 2.2) * 6.0;
+    for (int i = 0; i < 6; i++) {
+        cairo_set_source_rgba(cr, strand_r[i], strand_g[i], strand_b[i], alpha_mult * 0.8);
+        double bx = 30 + i * 2.0, by = -18 + i * 2.0;
+        cairo_move_to(cr, bx, by);
+        cairo_curve_to(cr, bx - 6, by + 6 + mane_sway * 0.3,
+                            bx - 10, by + 14 + mane_sway * 0.6,
+                            bx - 14, by + 20 + mane_sway);
+        cairo_stroke(cr);
+    }
+
+    double tail_sway = sin(t * 2.5 + 1.0) * 10.0;
+    for (int i = 0; i < 6; i++) {
+        cairo_set_source_rgba(cr, strand_r[i], strand_g[i], strand_b[i], alpha_mult * 0.8);
+        double bx = -28, by = -2 + i * 1.2;
+        cairo_move_to(cr, bx, by);
+        cairo_curve_to(cr, bx - 8, by + 4 + tail_sway * 0.3,
+                            bx - 16, by + 10 + tail_sway * 0.6,
+                            bx - 22, by + 16 + tail_sway);
+        cairo_stroke(cr);
+    }
+
+    cairo_restore(cr);
+
+    // A few golden sparkles trailing behind, drawn in world space (not
+    // flipped with the body) so they read the same regardless of facing.
+    cairo_set_source_rgba(cr, 1.0, 0.95, 0.60, 0.5 * alpha_mult);
+    for (int i = 0; i < 4; i++) {
+        double sx = x - dir * (28.0 + i * 8.0);
+        double sy = y + bob - 6.0 + sin(t * 4.0 + i) * 6.0;
+        double s = 1.2 + (i % 2);
+        cairo_arc(cr, sx, sy, s, 0, 2 * M_PI);
+        cairo_fill(cr);
+    }
+}
+
 // (Re)builds the cached static-layer surfaces for all four themes if they
 // haven't been built yet, or if the canvas size has changed since they
 // were (this file's canvas is normally a fixed GAME_W x GAME_H, but it's
@@ -1518,10 +1617,16 @@ void draw_floppy_fish(Visualizer *vis, cairo_t *cr) {
     }
     if (s_ff_guest_active) {
         double guest_alpha = ff_edge_fade(s_ff_guest_x, w);
-        if (s_ff_guest_is_mermaid) {
-            ff_draw_mermaid(cr, s_ff_guest_x, s_ff_guest_y, vis->time_offset, s_ff_guest_dir, guest_alpha);
-        } else {
-            ff_draw_diver(cr, s_ff_guest_x, s_ff_guest_y, vis->time_offset, s_ff_guest_dir, guest_alpha);
+        switch (s_ff_guest_kind) {
+            case FF_GUEST_MERMAID:
+                ff_draw_mermaid(cr, s_ff_guest_x, s_ff_guest_y, vis->time_offset, s_ff_guest_dir, guest_alpha);
+                break;
+            case FF_GUEST_UNICORN:
+                ff_draw_unicorn(cr, s_ff_guest_x, s_ff_guest_y, vis->time_offset, s_ff_guest_dir, guest_alpha);
+                break;
+            default:
+                ff_draw_diver(cr, s_ff_guest_x, s_ff_guest_y, vis->time_offset, s_ff_guest_dir, guest_alpha);
+                break;
         }
     }
     ff_draw_octopus(cr, s_ff_octopus_x, s_ff_octopus_y, 1.0, vis->time_offset,
