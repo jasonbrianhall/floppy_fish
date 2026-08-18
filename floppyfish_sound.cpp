@@ -1,6 +1,7 @@
 #include <SDL2/SDL.h>
 #include <vector>
 #include <math.h>
+#include <cstdio>
 // --- Procedural sound effects -----------------------------------------------
 // No audio assets on disk - both sounds are synthesized on the fly as short
 // PCM buffers and handed to SDL's audio queue, so there's nothing to ship
