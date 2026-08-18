@@ -25,7 +25,7 @@ typedef struct {
     int width, height;
     double time_offset;      // seconds since start, advanced by the host app
     bool mouse_left_pressed; // host sets true on click; game clears it after handling
-    bool mouse_middle_held;  // host keeps this true for as long as the middle button is held; game only reads it, never clears it
+    bool mouse_middle_pressed;  // host keeps this true for as long as the middle button is held; game only reads it, never clears it
     bool sound_flap;         // game sets true the frame the fish flaps; host plays a sound and it self-clears next frame
     bool sound_score;        // game sets true the frame a point is scored; same contract
     bool sound_dead;         // Floppy fish is dead

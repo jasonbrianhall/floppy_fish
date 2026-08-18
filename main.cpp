@@ -176,7 +176,7 @@ int main(int argc, char **argv) {
     vis.height = GAME_H;
     vis.time_offset = 0.0;
     vis.mouse_left_pressed = false;
-    vis.mouse_middle_held = false;
+    vis.mouse_middle_pressed = false;
     init_floppy_fish_system(&vis);
 
     Uint64 last_ticks = SDL_GetPerformanceCounter();
@@ -198,9 +198,9 @@ int main(int argc, char **argv) {
                 vis.mouse_left_pressed = true;
                 vis.deadcounter=0;
             } else if (e.type == SDL_MOUSEBUTTONDOWN && e.button.button == SDL_BUTTON_MIDDLE) {
-                vis.mouse_middle_held = true;
+                vis.mouse_middle_pressed = true;
             } else if (e.type == SDL_MOUSEBUTTONUP && e.button.button == SDL_BUTTON_MIDDLE) {
-                vis.mouse_middle_held = false;
+                vis.mouse_middle_pressed = false;
             } else if (e.type == SDL_WINDOWEVENT && e.window.event == SDL_WINDOWEVENT_SIZE_CHANGED) {
                 // Only the letterbox rect changes here - the game's own
                 // canvas (GAME_W x GAME_H) and simulation state are untouched.

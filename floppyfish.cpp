@@ -975,7 +975,7 @@ void update_floppy_fish(Visualizer *vis, double dt) {
     // gravity pulling the fish down and no flap impulse pushing it up.
     // Purely a control-mode override (still subject to the usual pipe/
     // floor/ceiling collisions below), not an invincibility cheat.
-    bool straight_swim = playing && vis->mouse_middle_held;
+    bool straight_swim = playing && vis->mouse_middle_pressed;
 
     if (straight_swim) {
         s_ff_fish_vel = 0.0;
