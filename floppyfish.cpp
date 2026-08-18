@@ -100,6 +100,12 @@ typedef struct {
     bool scored;
     bool active;
     int theme; // which zone this obstacle was spawned in (FFTheme) - fixed for its lifetime
+    // Pre-rendered top+bottom column art for this pipe. gap_center and theme
+    // (the only inputs to ff_draw_obstacle_column besides x/y, which are
+    // either fixed for the pipe's life or just a translation) never change
+    // after spawn, so the art is rendered once here instead of redrawing the
+    // coral lobes / beams / stalactites / columns from scratch every frame.
+    cairo_surface_t *art_cache;
 } FFPipe;
 
 // A handful of friendly color schemes so the player's fish looks different
@@ -716,6 +722,12 @@ void shutdown_floppy_fish_system() {
     ff_free_theme_caches();
     s_ff_cache_w = -1.0;
     s_ff_cache_h = -1.0;
+    for (int i = 0; i < FF_MAX_PIPES; i++) {
+        if (s_ff_pipes[i].art_cache) {
+            cairo_surface_destroy(s_ff_pipes[i].art_cache);
+            s_ff_pipes[i].art_cache = NULL;
+        }
+    }
 }
 
 static void ff_flap(Visualizer *vis) {
@@ -723,6 +735,24 @@ static void ff_flap(Visualizer *vis) {
 #ifdef FLOPPYSOUND
     vis->sound_flap = true;
 #endif
+}
+
+// Renders both columns of a pipe (top + bottom, given its fixed gap_center
+// and theme) into a fresh offscreen surface sized to the canvas height and
+// one pipe's width, at local x=0. Called once per pipe at spawn time; the
+// draw loop just blits+translates this every frame instead of re-running
+// the coral/beam/stalactite/column art generator per frame.
+static cairo_surface_t *ff_build_pipe_art_cache(double vis_h, double pipe_width,
+                                                 double gap_center, int theme) {
+    cairo_surface_t *surf = cairo_image_surface_create(
+        CAIRO_FORMAT_ARGB32, (int)ceil(pipe_width), (int)ceil(vis_h));
+    cairo_t *cr = cairo_create(surf);
+    double floor_h = vis_h * 0.10;
+    double gap = vis_h * 0.24;
+    ff_draw_obstacle_column(theme, cr, 0, 0, gap_center - gap * 0.5, pipe_width, gap_center, true);
+    ff_draw_obstacle_column(theme, cr, 0, gap_center + gap * 0.5, vis_h - floor_h, pipe_width, gap_center, false);
+    cairo_destroy(cr);
+    return surf;
 }
 
 static void ff_spawn_pipe(Visualizer *vis) {
@@ -745,11 +775,21 @@ static void ff_spawn_pipe(Visualizer *vis) {
         int tf, tt; double bt;
         ff_theme_at(s_ff_world_x + vis->width, zone_len, trans_len, &tf, &tt, &bt);
 
+        double pipe_width = vis->height * 0.16;
+
         s_ff_pipes[i].x = vis->width;
         s_ff_pipes[i].gap_center = gap_center;
         s_ff_pipes[i].scored = false;
         s_ff_pipes[i].theme = (bt > 0.5) ? tt : tf;
         s_ff_pipes[i].active = true;
+
+        // This slot's previous occupant (if any) had a different
+        // gap_center/theme, so its cached art is stale - rebuild it.
+        if (s_ff_pipes[i].art_cache) {
+            cairo_surface_destroy(s_ff_pipes[i].art_cache);
+        }
+        s_ff_pipes[i].art_cache = ff_build_pipe_art_cache(
+            vis->height, pipe_width, gap_center, s_ff_pipes[i].theme);
         return;
     }
 }
@@ -1497,11 +1537,9 @@ void draw_floppy_fish(Visualizer *vis, cairo_t *cr) {
     // individual columns don't morph mid-flight - it's the mix on screen
     // that shifts smoothly as newly-spawned ones start matching the new zone.
     for (int i = 0; i < FF_MAX_PIPES; i++) {
-        if (!s_ff_pipes[i].active) continue;
-        double gap = h * 0.24;
-        double gc = s_ff_pipes[i].gap_center;
-        ff_draw_obstacle_column(s_ff_pipes[i].theme, cr, s_ff_pipes[i].x, 0, gc - gap * 0.5, pipe_width, gc, true);
-        ff_draw_obstacle_column(s_ff_pipes[i].theme, cr, s_ff_pipes[i].x, gc + gap * 0.5, h - floor_h, pipe_width, gc, false);
+        if (!s_ff_pipes[i].active || !s_ff_pipes[i].art_cache) continue;
+        cairo_set_source_surface(cr, s_ff_pipes[i].art_cache, s_ff_pipes[i].x, 0);
+        cairo_paint(cr);
     }
 
     // Floor, crossfaded the same way as the sky - cached base fill blitted,
