@@ -32,18 +32,18 @@
 // All the per-theme obstacle art, sky, floor, and floor decoration live in
 // floppyfish_reef.cpp / floppyfish_ship.cpp / floppyfish_cave.cpp /
 // floppyfish_atlantis.cpp / floppyfish_rainbow.cpp / floppyfish_dino.cpp /
-// floppyfish_antarctic.cpp / floppyfish_aquarium.cpp (see
-// floppyfish_common.h for the shared contract). This file owns everything
-// theme-agnostic: game state, physics, collision, background critters,
-// the player fish, and the UI.
+// floppyfish_antarctic.cpp / floppyfish_aquarium.cpp / floppyfish_galaxy.cpp
+// (see floppyfish_common.h for the shared contract). This file owns
+// everything theme-agnostic: game state, physics, collision, background
+// critters, the player fish, and the UI.
 
 #define FF_MAX_PIPES 8
 #define FF_BG_FISH_COUNT 7
 
-// Eight visual themes the run cycles through as the fish travels: coral
+// Nine visual themes the run cycles through as the fish travels: coral
 // reef, a sunken pirate ship, a dark cave, the ruins of Atlantis, a
 // sky-high rainbow realm, a murky prehistoric bone-yard, the icy
-// Antarctic, and a bright glass aquarium tank.
+// Antarctic, a bright glass aquarium tank, and outer space.
 // s_ff_world_x is the total scroll distance covered so far (reset each run,
 // paused unless actively playing) and picks which theme zone the camera is
 // currently in. Zone length and the crossfade band between zones are both
@@ -480,8 +480,8 @@ static cairo_font_face_t *s_ff_font_face = NULL;
 // ff_ensure_theme_caches. Everything that actually animates (bubbles, sand
 // ripples, etc.) still gets drawn live on top of these every frame; only
 // the expensive full-canvas painting gets reused instead of redone.
-static cairo_surface_t *s_ff_sky_cache[FF_THEME_COUNT] = {NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL};
-static cairo_surface_t *s_ff_floor_cache[FF_THEME_COUNT] = {NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL};
+static cairo_surface_t *s_ff_sky_cache[FF_THEME_COUNT] = {NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL};
+static cairo_surface_t *s_ff_floor_cache[FF_THEME_COUNT] = {NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL};
 static double s_ff_cache_w = -1.0, s_ff_cache_h = -1.0; // canvas size the caches above were built for
 static void ff_free_theme_caches(); // defined near draw_floppy_fish, used by shutdown below
 
@@ -529,12 +529,14 @@ static double s_ff_shark_scale = 1.0; // most passes are medium-sized; occasiona
 // Atlantis zones, a unicorn during the rainbow zones, a mosasaurus during
 // the bone-yard zones, a group of penguins during the Antarctic zones, a
 // pair of lobsters scuttling along the gravel during the aquarium zones,
-// a diver everywhere else (reef/ship/cave). Which one it is gets decided
+// a pair of astronauts drifting on tethers during the galaxy zones, a
+// diver everywhere else (reef/ship/cave). Which one it is gets decided
 // once, at spawn time (see ff_spawn_guest), and holds for that guest's
 // whole pass across the tank.
 typedef enum {
     FF_GUEST_DIVER = 0, FF_GUEST_MERMAID = 1, FF_GUEST_UNICORN = 2,
-    FF_GUEST_MOSASAURUS = 3, FF_GUEST_PENGUINS = 4, FF_GUEST_LOBSTERS = 5
+    FF_GUEST_MOSASAURUS = 3, FF_GUEST_PENGUINS = 4, FF_GUEST_LOBSTERS = 5,
+    FF_GUEST_ASTRONAUTS = 6
 } FFGuestKind;
 
 static bool s_ff_guest_active = false;
@@ -621,14 +623,15 @@ static void ff_spawn_shark(Visualizer *vis) {
     s_ff_shark_active = true;
 }
 
-// Sends the mermaid/diver/unicorn/mosasaurus/penguins/lobsters guest
-// across, same way as the shark. Which silhouette it is gets picked from
-// whichever theme currently dominates the screen (s_ff_world_x, same
+// Sends the mermaid/diver/unicorn/mosasaurus/penguins/lobsters/astronauts
+// guest across, same way as the shark. Which silhouette it is gets picked
+// from whichever theme currently dominates the screen (s_ff_world_x, same
 // lookup ff_spawn_pipe uses for obstacles), so a diver never turns up over
 // the Atlantis ruins, the mermaid never turns up over a coral reef, the
 // unicorn only ever turns up over the rainbow realm, the mosasaurus only
-// over the bone yard, the penguins only over the Antarctic, and the
-// lobsters only over the aquarium gravel.
+// over the bone yard, the penguins only over the Antarctic, the lobsters
+// only over the aquarium gravel, and the astronauts only out in the
+// galaxy.
 static void ff_spawn_guest(Visualizer *vis) {
     int dir = (rand() % 2 == 0) ? 1 : -1;
     s_ff_guest_dir = dir;
@@ -648,7 +651,9 @@ static void ff_spawn_guest(Visualizer *vis) {
                      : (dominant == FF_THEME_DINO)      ? FF_GUEST_MOSASAURUS
                      : (dominant == FF_THEME_ANTARCTIC) ? FF_GUEST_PENGUINS
                      : (dominant == FF_THEME_AQUARIUM)  ? FF_GUEST_LOBSTERS
+                     : (dominant == FF_THEME_GALAXY)    ? FF_GUEST_ASTRONAUTS
                                                         : FF_GUEST_DIVER;
+
 
     // Lobsters scuttle along the gravel rather than drifting mid-tank like
     // every other guest, so they get their own slower speed and a y pinned
@@ -714,8 +719,8 @@ static void ff_init_background(Visualizer *vis) {
     // Shark stays off-screen for a while after launch before its first pass.
     s_ff_shark_active = false;
     s_ff_shark_wait = 12.0 + 15.0 * ((double)rand() / RAND_MAX);
-    // Same for the mermaid/diver/unicorn/mosasaurus/penguins/lobsters
-    // guest, on its own independent cadence.
+    // Same for the mermaid/diver/unicorn/mosasaurus/penguins/lobsters/
+    // astronauts guest, on its own independent cadence.
     s_ff_guest_active = false;
     s_ff_guest_wait = 10.0 + 14.0 * ((double)rand() / RAND_MAX);
     // Place patches one at a time so each new one can avoid the ones
@@ -941,9 +946,9 @@ void update_floppy_fish(Visualizer *vis, double dt) {
         }
     }
 
-    // Mermaid/diver/unicorn/mosasaurus/penguins/lobsters guest: same
-    // rare-pass pattern as the shark, independent timer so the two don't
-    // line up.
+    // Mermaid/diver/unicorn/mosasaurus/penguins/lobsters/astronauts guest:
+    // same rare-pass pattern as the shark, independent timer so the two
+    // don't line up.
     if (s_ff_guest_active) {
         s_ff_guest_x += s_ff_guest_dir * s_ff_guest_speed * dt;
         bool guest_off_left  = s_ff_guest_dir < 0 && s_ff_guest_x < -vis->width * 0.20;
@@ -1806,7 +1811,102 @@ static void ff_draw_lobster_group(cairo_t *cr, double x, double y, double t, int
     }
 }
 
-// (Re)builds the cached static-layer surfaces for all eight themes if they
+// A single drifting astronaut: a bulky suit torso, a helmet with a
+// reflective visor, a backpack (PLSS), limbs swaying loosely as if in
+// zero-g, a tether cable trailing behind, and a couple of small thruster
+// puffs - facing/moving toward the swim direction (+x).
+static void ff_draw_astronaut_single(cairo_t *cr, double x, double y, double t, int dir, double alpha_mult, double scale) {
+    if (alpha_mult <= 0.0) return;
+    cairo_save(cr);
+    cairo_translate(cr, x, y);
+    cairo_scale(cr, (double)dir * scale, scale);
+    cairo_rotate(cr, sin(t * 1.2) * 0.08);
+
+    double alpha = 0.55 * alpha_mult;
+
+    // Suit torso.
+    cairo_set_source_rgba(cr, 0.92, 0.92, 0.94, alpha);
+    cairo_move_to(cr, -10, -6);
+    cairo_curve_to(cr, -14, 4, -12, 14, -4, 18);
+    cairo_curve_to(cr, 4, 20, 12, 16, 12, 6);
+    cairo_curve_to(cr, 12, -4, 4, -10, -10, -6);
+    cairo_close_path(cr);
+    cairo_fill(cr);
+
+    // Backpack (life-support pack), peeking out behind the torso.
+    cairo_set_source_rgba(cr, 0.72, 0.72, 0.78, alpha);
+    cairo_rectangle(cr, -16, -4, 7, 16);
+    cairo_fill(cr);
+
+    // Helmet and reflective visor.
+    cairo_set_source_rgba(cr, 0.92, 0.92, 0.94, alpha);
+    cairo_arc(cr, 6, -14, 9, 0, 2 * M_PI);
+    cairo_fill(cr);
+    cairo_set_source_rgba(cr, 0.15, 0.55, 0.85, alpha_mult * 0.7);
+    cairo_arc(cr, 8, -14, 6, 0, 2 * M_PI);
+    cairo_fill(cr);
+    cairo_set_source_rgba(cr, 1.0, 1.0, 1.0, 0.5 * alpha_mult);
+    cairo_arc(cr, 6, -17, 2, 0, 2 * M_PI);
+    cairo_fill(cr);
+
+    // Arms and legs, drifting loosely rather than swimming with purpose.
+    double armswing = sin(t * 1.5) * 10.0;
+    double legswing = sin(t * 1.3 + 1.0) * 8.0;
+    cairo_set_source_rgba(cr, 0.90, 0.90, 0.92, alpha);
+    cairo_set_line_width(cr, 5.0);
+    cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND);
+    cairo_move_to(cr, -6, 0);
+    cairo_curve_to(cr, -14, -2 + armswing * 0.3, -20, 4 + armswing * 0.6, -24, 10 + armswing);
+    cairo_stroke(cr);
+    cairo_move_to(cr, 8, 4);
+    cairo_curve_to(cr, 16, 8 - armswing * 0.3, 20, 14 - armswing * 0.6, 22, 20 - armswing);
+    cairo_stroke(cr);
+    cairo_move_to(cr, -6, 16);
+    cairo_curve_to(cr, -10, 22, -12, 28 + legswing * 0.5, -14, 34 + legswing);
+    cairo_stroke(cr);
+    cairo_move_to(cr, 2, 18);
+    cairo_curve_to(cr, 6, 24, 8, 30 - legswing * 0.5, 10, 36 - legswing);
+    cairo_stroke(cr);
+
+    cairo_restore(cr);
+
+    // Tether cable and thruster puffs, drawn in world space (not
+    // flipped/rotated with the body) so they trail correctly however the
+    // astronaut is facing.
+    cairo_set_source_rgba(cr, 0.85, 0.85, 0.30, 0.4 * alpha_mult);
+    cairo_set_line_width(cr, 1.5);
+    double tx = x - dir * 26.0, ty = y + 10.0;
+    cairo_move_to(cr, x - dir * 10.0, y + 4.0);
+    cairo_curve_to(cr, x - dir * 18.0, y + 8.0 + sin(t * 2.0) * 4.0,
+                        x - dir * 24.0, y + 2.0 + sin(t * 2.3) * 5.0,
+                        tx, ty);
+    cairo_stroke(cr);
+
+    cairo_set_source_rgba(cr, 1.0, 1.0, 1.0, 0.3 * alpha_mult);
+    for (int k = 0; k < 2; k++) {
+        double px = x - dir * (14.0 + k * 5.0);
+        double py = y + 6.0 + sin(t * 3.0 + k) * 3.0;
+        cairo_arc(cr, px, py, 1.5 + k * 0.5, 0, 2 * M_PI);
+        cairo_fill(cr);
+    }
+}
+
+// The galaxy-zone guest: a pair of astronauts drifting past on their
+// tethers together, buddy-system style, rather than a lone figure.
+static void ff_draw_astronaut_group(cairo_t *cr, double x, double y, double t, int dir, double alpha_mult) {
+    if (alpha_mult <= 0.0) return;
+    static const double off_x[2] = {0.0, -46.0};
+    static const double off_y[2] = {0.0, 20.0};
+    static const double scale[2] = {1.0, 0.85};
+
+    for (int i = 0; i < 2; i++) {
+        double px = x + dir * off_x[i];
+        double py = y + off_y[i];
+        ff_draw_astronaut_single(cr, px, py, t + i * 0.5, dir, alpha_mult, scale[i]);
+    }
+}
+
+// (Re)builds the cached static-layer surfaces for all nine themes if they
 // haven't been built yet, or if the canvas size has changed since they
 // were (this file's canvas is normally a fixed GAME_W x GAME_H, but it's
 // also reused as-is by zenamp's visualizer, so this is a size check rather
@@ -1922,6 +2022,9 @@ void draw_floppy_fish(Visualizer *vis, cairo_t *cr) {
                 break;
             case FF_GUEST_LOBSTERS:
                 ff_draw_lobster_group(cr, s_ff_guest_x, s_ff_guest_y, vis->time_offset, s_ff_guest_dir, guest_alpha);
+                break;
+            case FF_GUEST_ASTRONAUTS:
+                ff_draw_astronaut_group(cr, s_ff_guest_x, s_ff_guest_y, vis->time_offset, s_ff_guest_dir, guest_alpha);
                 break;
             default:
                 ff_draw_diver(cr, s_ff_guest_x, s_ff_guest_y, vis->time_offset, s_ff_guest_dir, guest_alpha);
