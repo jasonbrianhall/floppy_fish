@@ -31,17 +31,18 @@
 //
 // All the per-theme obstacle art, sky, floor, and floor decoration live in
 // floppyfish_reef.cpp / floppyfish_ship.cpp / floppyfish_cave.cpp /
-// floppyfish_atlantis.cpp / floppyfish_rainbow.cpp / floppyfish_dino.cpp
-// (see floppyfish_common.h for the shared contract). This file owns
-// everything theme-agnostic: game state, physics, collision, background
-// critters, the player fish, and the UI.
+// floppyfish_atlantis.cpp / floppyfish_rainbow.cpp / floppyfish_dino.cpp /
+// floppyfish_antarctic.cpp (see floppyfish_common.h for the shared
+// contract). This file owns everything theme-agnostic: game state,
+// physics, collision, background critters, the player fish, and the UI.
 
 #define FF_MAX_PIPES 8
 #define FF_BG_FISH_COUNT 7
 
-// Six visual themes the run cycles through as the fish travels: coral
+// Seven visual themes the run cycles through as the fish travels: coral
 // reef, a sunken pirate ship, a dark cave, the ruins of Atlantis, a
-// sky-high rainbow realm, and a murky prehistoric bone-yard.
+// sky-high rainbow realm, a murky prehistoric bone-yard, and the icy
+// Antarctic.
 // s_ff_world_x is the total scroll distance covered so far (reset each run,
 // paused unless actively playing) and picks which theme zone the camera is
 // currently in. Zone length and the crossfade band between zones are both
@@ -478,8 +479,8 @@ static cairo_font_face_t *s_ff_font_face = NULL;
 // ff_ensure_theme_caches. Everything that actually animates (bubbles, sand
 // ripples, etc.) still gets drawn live on top of these every frame; only
 // the expensive full-canvas painting gets reused instead of redone.
-static cairo_surface_t *s_ff_sky_cache[FF_THEME_COUNT] = {NULL, NULL, NULL, NULL, NULL, NULL};
-static cairo_surface_t *s_ff_floor_cache[FF_THEME_COUNT] = {NULL, NULL, NULL, NULL, NULL, NULL};
+static cairo_surface_t *s_ff_sky_cache[FF_THEME_COUNT] = {NULL, NULL, NULL, NULL, NULL, NULL, NULL};
+static cairo_surface_t *s_ff_floor_cache[FF_THEME_COUNT] = {NULL, NULL, NULL, NULL, NULL, NULL, NULL};
 static double s_ff_cache_w = -1.0, s_ff_cache_h = -1.0; // canvas size the caches above were built for
 static void ff_free_theme_caches(); // defined near draw_floppy_fish, used by shutdown below
 
@@ -525,10 +526,14 @@ static double s_ff_shark_scale = 1.0; // most passes are medium-sized; occasiona
 // Another rare guest, same cadence as the shark but themed to match
 // whatever's currently on screen: a mermaid drifts through during the
 // Atlantis zones, a unicorn during the rainbow zones, a mosasaurus during
-// the bone-yard zones, a diver everywhere else (reef/ship/cave). Which one
-// it is gets decided once, at spawn time (see ff_spawn_guest), and holds
-// for that guest's whole pass across the tank.
-typedef enum { FF_GUEST_DIVER = 0, FF_GUEST_MERMAID = 1, FF_GUEST_UNICORN = 2, FF_GUEST_MOSASAURUS = 3 } FFGuestKind;
+// the bone-yard zones, a group of penguins during the Antarctic zones, a
+// diver everywhere else (reef/ship/cave). Which one it is gets decided
+// once, at spawn time (see ff_spawn_guest), and holds for that guest's
+// whole pass across the tank.
+typedef enum {
+    FF_GUEST_DIVER = 0, FF_GUEST_MERMAID = 1, FF_GUEST_UNICORN = 2,
+    FF_GUEST_MOSASAURUS = 3, FF_GUEST_PENGUINS = 4
+} FFGuestKind;
 
 static bool s_ff_guest_active = false;
 static double s_ff_guest_wait = 0.0;
@@ -614,12 +619,13 @@ static void ff_spawn_shark(Visualizer *vis) {
     s_ff_shark_active = true;
 }
 
-// Sends the mermaid/diver/unicorn/mosasaurus guest across, same way as the
-// shark. Which silhouette it is gets picked from whichever theme currently
-// dominates the screen (s_ff_world_x, same lookup ff_spawn_pipe uses for
-// obstacles), so a diver never turns up over the Atlantis ruins, the
-// mermaid never turns up over a coral reef, the unicorn only ever turns up
-// over the rainbow realm, and the mosasaurus only over the bone yard.
+// Sends the mermaid/diver/unicorn/mosasaurus/penguins guest across, same
+// way as the shark. Which silhouette it is gets picked from whichever
+// theme currently dominates the screen (s_ff_world_x, same lookup
+// ff_spawn_pipe uses for obstacles), so a diver never turns up over the
+// Atlantis ruins, the mermaid never turns up over a coral reef, the
+// unicorn only ever turns up over the rainbow realm, the mosasaurus only
+// over the bone yard, and the penguins only over the Antarctic.
 static void ff_spawn_guest(Visualizer *vis) {
     int dir = (rand() % 2 == 0) ? 1 : -1;
     s_ff_guest_dir = dir;
@@ -639,6 +645,7 @@ static void ff_spawn_guest(Visualizer *vis) {
     s_ff_guest_kind = (dominant == FF_THEME_ATLANTIS) ? FF_GUEST_MERMAID
                      : (dominant == FF_THEME_RAINBOW)  ? FF_GUEST_UNICORN
                      : (dominant == FF_THEME_DINO)      ? FF_GUEST_MOSASAURUS
+                     : (dominant == FF_THEME_ANTARCTIC) ? FF_GUEST_PENGUINS
                                                         : FF_GUEST_DIVER;
 
     s_ff_guest_active = true;
@@ -693,8 +700,8 @@ static void ff_init_background(Visualizer *vis) {
     // Shark stays off-screen for a while after launch before its first pass.
     s_ff_shark_active = false;
     s_ff_shark_wait = 12.0 + 15.0 * ((double)rand() / RAND_MAX);
-    // Same for the mermaid/diver/unicorn/mosasaurus guest, on its own
-    // independent cadence.
+    // Same for the mermaid/diver/unicorn/mosasaurus/penguins guest, on its
+    // own independent cadence.
     s_ff_guest_active = false;
     s_ff_guest_wait = 10.0 + 14.0 * ((double)rand() / RAND_MAX);
     // Place patches one at a time so each new one can avoid the ones
@@ -920,8 +927,8 @@ void update_floppy_fish(Visualizer *vis, double dt) {
         }
     }
 
-    // Mermaid/diver/unicorn/mosasaurus guest: same rare-pass pattern as the
-    // shark, independent timer so the two don't line up.
+    // Mermaid/diver/unicorn/mosasaurus/penguins guest: same rare-pass
+    // pattern as the shark, independent timer so the two don't line up.
     if (s_ff_guest_active) {
         s_ff_guest_x += s_ff_guest_dir * s_ff_guest_speed * dt;
         bool guest_off_left  = s_ff_guest_dir < 0 && s_ff_guest_x < -vis->width * 0.20;
@@ -1610,7 +1617,86 @@ static void ff_draw_mosasaurus(cairo_t *cr, double x, double y, double t, int di
     cairo_restore(cr);
 }
 
-// (Re)builds the cached static-layer surfaces for all six themes if they
+// A single swimming penguin: a compact torpedo body, black back, white
+// belly, orange beak, and a pair of flippers flapping like a fast
+// underwater "flight" - head toward the swim direction (+x). Used three
+// times by ff_draw_penguin_group below, since a lone penguin doesn't say
+// "Antarctic" nearly as clearly as a little waddle of them does.
+static void ff_draw_penguin_single(cairo_t *cr, double x, double y, double t, int dir, double alpha_mult, double scale) {
+    if (alpha_mult <= 0.0) return;
+    cairo_save(cr);
+    cairo_translate(cr, x, y);
+    cairo_scale(cr, (double)dir * scale, scale);
+
+    double flap = sin(t * 6.0) * 0.3;
+    double alpha = 0.55 * alpha_mult;
+
+    // Back (black).
+    cairo_set_source_rgba(cr, 0.05, 0.05, 0.07, alpha);
+    cairo_move_to(cr, 18, 0);
+    cairo_curve_to(cr, 14, -10, -4, -12, -16, -6);
+    cairo_curve_to(cr, -20, -3, -20, 3, -16, 6);
+    cairo_curve_to(cr, -4, 12, 14, 10, 18, 0);
+    cairo_close_path(cr);
+    cairo_fill(cr);
+
+    // Belly (white), inset.
+    cairo_set_source_rgba(cr, 0.96, 0.96, 0.98, alpha);
+    cairo_move_to(cr, 12, 0);
+    cairo_curve_to(cr, 9, -5, -2, -6, -11, -3);
+    cairo_curve_to(cr, -13, -1, -13, 1, -11, 3);
+    cairo_curve_to(cr, -2, 6, 9, 5, 12, 0);
+    cairo_close_path(cr);
+    cairo_fill(cr);
+
+    // Flippers, flapping in a fast wingbeat.
+    cairo_set_source_rgba(cr, 0.05, 0.05, 0.07, alpha);
+    cairo_move_to(cr, 2, -4);
+    cairo_line_to(cr, -2, -14 + flap * 8);
+    cairo_line_to(cr, 6, -6);
+    cairo_close_path(cr);
+    cairo_fill(cr);
+    cairo_move_to(cr, 2, 4);
+    cairo_line_to(cr, -2, 14 - flap * 8);
+    cairo_line_to(cr, 6, 6);
+    cairo_close_path(cr);
+    cairo_fill(cr);
+
+    // Head and beak.
+    cairo_arc(cr, 17, -1, 5, 0, 2 * M_PI);
+    cairo_fill(cr);
+    cairo_set_source_rgba(cr, 0.95, 0.55, 0.15, alpha_mult * 0.85);
+    cairo_move_to(cr, 21, -1);
+    cairo_line_to(cr, 26, 0);
+    cairo_line_to(cr, 21, 1);
+    cairo_close_path(cr);
+    cairo_fill(cr);
+
+    cairo_restore(cr);
+}
+
+// The Antarctic-zone guest: a little waddle of three penguins swimming
+// past together, each with its own bob/phase so they read as a loose
+// group rather than three copies of one animal. Positions are given in
+// pre-flip local space (negative x trails behind the lead penguin) and
+// scaled by dir so the whole group still trails correctly however it's
+// facing.
+static void ff_draw_penguin_group(cairo_t *cr, double x, double y, double t, int dir, double alpha_mult) {
+    if (alpha_mult <= 0.0) return;
+    static const double off_x[3]  = {0.0, -34.0, -30.0};
+    static const double off_y[3]  = {0.0, -16.0, 15.0};
+    static const double scale[3]  = {1.0, 0.82, 0.86};
+    static const double phase[3]  = {0.0, 0.6, 1.3};
+
+    for (int i = 0; i < 3; i++) {
+        double bob = sin(t * 2.0 + phase[i] * 3.0) * 5.0;
+        double px = x + dir * off_x[i];
+        double py = y + off_y[i] + bob;
+        ff_draw_penguin_single(cr, px, py, t + phase[i], dir, alpha_mult, scale[i]);
+    }
+}
+
+// (Re)builds the cached static-layer surfaces for all seven themes if they
 // haven't been built yet, or if the canvas size has changed since they
 // were (this file's canvas is normally a fixed GAME_W x GAME_H, but it's
 // also reused as-is by zenamp's visualizer, so this is a size check rather
@@ -1720,6 +1806,9 @@ void draw_floppy_fish(Visualizer *vis, cairo_t *cr) {
                 break;
             case FF_GUEST_MOSASAURUS:
                 ff_draw_mosasaurus(cr, s_ff_guest_x, s_ff_guest_y, vis->time_offset, s_ff_guest_dir, guest_alpha);
+                break;
+            case FF_GUEST_PENGUINS:
+                ff_draw_penguin_group(cr, s_ff_guest_x, s_ff_guest_y, vis->time_offset, s_ff_guest_dir, guest_alpha);
                 break;
             default:
                 ff_draw_diver(cr, s_ff_guest_x, s_ff_guest_y, vis->time_offset, s_ff_guest_dir, guest_alpha);
