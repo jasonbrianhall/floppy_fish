@@ -41,9 +41,9 @@ CXXFLAGS_WIN_DEBUG = -std=c++17 -Wall -DFLOPPYSOUND $(SDL2_CFLAGS_WIN) $(CAIRO_C
 
 LDFLAGS_WIN_DEBUG  = $(SDL2_LIBS_WIN) $(CAIRO_LIBS_WIN) -lm -static-libgcc -static-libstdc++
 
-SRCS = main.cpp floppyfish.cpp floppyfish_common.cpp \
+SRCS = main.cpp floppyfish.cpp floppyfish_common.cpp floppyfish_galaxy.cpp \
        floppyfish_atlantis.cpp floppyfish_cave.cpp floppyfish_aquarium.cpp \
-       floppyfish_reef.cpp floppyfish_ship.cpp floppyfish_sound.cpp \
+       floppyfish_reef.cpp floppyfish_ship.cpp floppyfish_sound.cpp        \
        floppyfish_rainbow.cpp floppyfish_dino.cpp floppyfish_antarctic.cpp
 
 BUILD_DIR      = build
