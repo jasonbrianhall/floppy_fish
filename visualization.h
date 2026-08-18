@@ -41,4 +41,10 @@ void draw_floppy_fish(Visualizer *vis, cairo_t *cr);
 // draw_floppy_fish() call.
 void shutdown_floppy_fish_system();
 
+void floppyfish_audio_init();
+void floppyfish_audio_play_dead();
+void floppyfish_audio_play_sweep(double f0, double f1, double dur, double volume);
+void floppyfish_audio_play_notes(const double *freqs, const double *durs, int count, double volume);
+void floppyfish_audio_play_flap();
+void floppyfish_audio_play_score();
 #endif
