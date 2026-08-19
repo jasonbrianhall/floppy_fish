@@ -94,6 +94,7 @@ int main(int argc, char **argv) {
     vis.time_offset = 0.0;
     vis.mouse_left_pressed = false;
     vis.mouse_middle_pressed = false;
+    vis.mouse_right_pressed = false;
     init_floppy_fish_system(&vis);
 
     Uint64 last_ticks = SDL_GetPerformanceCounter();
@@ -113,6 +114,9 @@ int main(int argc, char **argv) {
                 SDL_SetWindowFullscreen(window, is_fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
             } else if (e.type == SDL_MOUSEBUTTONDOWN && e.button.button == SDL_BUTTON_LEFT) {
                 vis.mouse_left_pressed = true;
+                vis.deadcounter=0;
+            } else if (e.type == SDL_MOUSEBUTTONDOWN && e.button.button == SDL_BUTTON_RIGHT) {
+                vis.mouse_right_pressed = true;
                 vis.deadcounter=0;
             } else if (e.type == SDL_MOUSEBUTTONDOWN && e.button.button == SDL_BUTTON_MIDDLE) {
                 vis.mouse_middle_pressed = true;

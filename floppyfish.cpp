@@ -982,7 +982,7 @@ void update_floppy_fish(Visualizer *vis, double dt) {
     double fish_x = vis->width * FF_FISH_X_FRAC;
 
     // Click handling: flap, start, or restart depending on game state.
-    if (vis->mouse_left_pressed) {
+    if (vis->mouse_left_pressed || vis->mouse_right_pressed) {
         if (s_ff_state == FF_READY) {
             s_ff_state = FF_PLAYING;
             ff_flap(vis);
@@ -1012,7 +1012,8 @@ void update_floppy_fish(Visualizer *vis, double dt) {
     // gravity pulling the fish down and no flap impulse pushing it up.
     // Purely a control-mode override (still subject to the usual pipe/
     // floor/ceiling collisions below), not an invincibility cheat.
-    bool straight_swim = playing && vis->mouse_middle_pressed;
+    bool straight_swim = playing && vis->mouse_middle_pressed && !vis->mouse_right_pressed;
+    vis->mouse_right_pressed = FALSE;
 
     if (straight_swim) {
         s_ff_fish_vel = 0.0;
