@@ -34,19 +34,20 @@
 // floppyfish_reef.cpp / floppyfish_ship.cpp / floppyfish_cave.cpp /
 // floppyfish_atlantis.cpp / floppyfish_rainbow.cpp / floppyfish_dino.cpp /
 // floppyfish_antarctic.cpp / floppyfish_aquarium.cpp / floppyfish_galaxy.cpp /
-// floppyfish_swamp.cpp / floppyfish_party.cpp (see floppyfish_common.h for
-// the shared contract). This file owns everything theme-agnostic: game
+// floppyfish_swamp.cpp / floppyfish_party.cpp / floppyfish_volcanic.cpp (see
+// floppyfish_common.h for the shared contract). This file owns everything theme-agnostic: game
 // state, physics, collision, background critters, the player fish, and the
 // UI.
 
 #define FF_MAX_PIPES 8
 #define FF_BG_FISH_COUNT 7
 
-// Eleven visual themes the run cycles through as the fish travels: coral
+// Twelve visual themes the run cycles through as the fish travels: coral
 // reef, a sunken pirate ship, a dark cave, the ruins of Atlantis, a
 // sky-high rainbow realm, a murky prehistoric bone-yard, the icy
 // Antarctic, a bright glass aquarium tank, outer space, a mystical
-// mangrove swamp, and a black-lit underwater dance party.
+// mangrove swamp, a black-lit underwater dance party, and a deep-sea
+// volcanic vent field.
 // s_ff_world_x is the total scroll distance covered so far (reset each run,
 // paused unless actively playing) and picks which theme zone the camera is
 // currently in. Zone length and the crossfade band between zones are both
@@ -498,8 +499,8 @@ static cairo_font_face_t *s_ff_font_face = NULL;
 // ff_ensure_theme_caches. Everything that actually animates (bubbles, sand
 // ripples, etc.) still gets drawn live on top of these every frame; only
 // the expensive full-canvas painting gets reused instead of redone.
-static cairo_surface_t *s_ff_sky_cache[FF_THEME_COUNT] = {NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL};
-static cairo_surface_t *s_ff_floor_cache[FF_THEME_COUNT] = {NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL};
+static cairo_surface_t *s_ff_sky_cache[FF_THEME_COUNT] = {NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL};
+static cairo_surface_t *s_ff_floor_cache[FF_THEME_COUNT] = {NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL};
 static double s_ff_cache_w = -1.0, s_ff_cache_h = -1.0; // canvas size the caches above were built for
 static void ff_free_theme_caches(); // defined near draw_floppy_fish, used by shutdown below
 
@@ -549,13 +550,14 @@ static double s_ff_shark_scale = 1.0; // most passes are medium-sized; occasiona
 // pair of lobsters scuttling along the gravel during the aquarium zones,
 // a pair of astronauts drifting on tethers during the galaxy zones, a
 // pair of alligators cruising the murky water during the swamp zones, a
-// diver everywhere else (reef/ship/cave). Which one it is gets decided
-// once, at spawn time (see ff_spawn_guest), and holds for that guest's
-// whole pass across the tank.
+// pair of vent crabs scuttling among the chimneys during the volcanic
+// zones, a diver everywhere else (reef/ship/cave). Which one it is gets
+// decided once, at spawn time (see ff_spawn_guest), and holds for that
+// guest's whole pass across the tank.
 typedef enum {
     FF_GUEST_DIVER = 0, FF_GUEST_MERMAID = 1, FF_GUEST_UNICORN = 2,
     FF_GUEST_MOSASAURUS = 3, FF_GUEST_PENGUINS = 4, FF_GUEST_LOBSTERS = 5,
-    FF_GUEST_ASTRONAUTS = 6, FF_GUEST_ALLIGATORS = 7
+    FF_GUEST_ASTRONAUTS = 6, FF_GUEST_ALLIGATORS = 7, FF_GUEST_VENTCRABS = 8
 } FFGuestKind;
 
 static bool s_ff_guest_active = false;
@@ -650,7 +652,8 @@ static void ff_spawn_shark(Visualizer *vis) {
 // a coral reef, the unicorn only ever turns up over the rainbow realm, the
 // mosasaurus only over the bone yard, the penguins only over the
 // Antarctic, the lobsters only over the aquarium gravel, the astronauts
-// only out in the galaxy, and the alligators only over the swamp.
+// only out in the galaxy, the alligators only over the swamp, and the
+// vent crabs only over the volcanic field.
 static void ff_spawn_guest(Visualizer *vis) {
     int dir = (rand() % 2 == 0) ? 1 : -1;
     s_ff_guest_dir = dir;
@@ -672,13 +675,14 @@ static void ff_spawn_guest(Visualizer *vis) {
                      : (dominant == FF_THEME_AQUARIUM)  ? FF_GUEST_LOBSTERS
                      : (dominant == FF_THEME_GALAXY)    ? FF_GUEST_ASTRONAUTS
                      : (dominant == FF_THEME_SWAMP)     ? FF_GUEST_ALLIGATORS
+                     : (dominant == FF_THEME_VOLCANIC)  ? FF_GUEST_VENTCRABS
                                                         : FF_GUEST_DIVER;
 
 
-    // Lobsters scuttle along the gravel and alligators cruise low through
-    // the murky water rather than drifting mid-tank like every other
-    // guest, so they get their own slower speed and a y pinned just above
-    // the floor line instead of the usual random spread.
+    // Lobsters and vent crabs scuttle along the floor and alligators
+    // cruise low through the murky water rather than drifting mid-tank
+    // like every other guest, so they get their own slower speed and a y
+    // pinned just above the floor line instead of the usual random spread.
     if (s_ff_guest_kind == FF_GUEST_LOBSTERS) {
         s_ff_guest_speed = vis->height * (0.045 + 0.03 * ((double)rand() / RAND_MAX));
         double floor_h = vis->height * 0.10;
@@ -687,6 +691,10 @@ static void ff_spawn_guest(Visualizer *vis) {
         s_ff_guest_speed = vis->height * (0.06 + 0.05 * ((double)rand() / RAND_MAX));
         double floor_h = vis->height * 0.10;
         s_ff_guest_y = vis->height - floor_h - vis->height * (0.05 + 0.10 * ((double)rand() / RAND_MAX));
+    } else if (s_ff_guest_kind == FF_GUEST_VENTCRABS) {
+        s_ff_guest_speed = vis->height * (0.045 + 0.03 * ((double)rand() / RAND_MAX));
+        double floor_h = vis->height * 0.10;
+        s_ff_guest_y = vis->height - floor_h - vis->height * (0.01 + 0.02 * ((double)rand() / RAND_MAX));
     } else {
         s_ff_guest_speed = vis->height * (0.09 + 0.09 * ((double)rand() / RAND_MAX));
         s_ff_guest_y = vis->height * (0.12 + 0.50 * ((double)rand() / RAND_MAX));
@@ -2192,7 +2200,95 @@ static void ff_draw_alligator_group(cairo_t *cr, double x, double y, double t, i
     }
 }
 
-// (Re)builds the cached static-layer surfaces for all eleven themes if they
+// A single scuttling vent crab: a squat rounded shell, stubby fuzzy claws
+// (yeti-crab style rather than lobster-lean), and short walking legs, tinted
+// pale and picking up a faint ember glow from the vents rather than a
+// natural shell color - drawn close to the basalt floor rather than
+// mid-tank like every other guest (see ff_spawn_guest). Head/claws toward
+// the direction of travel (+x).
+static void ff_draw_ventcrab_single(cairo_t *cr, double x, double y, double t, int dir, double alpha_mult, double scale) {
+    if (alpha_mult <= 0.0) return;
+    cairo_save(cr);
+    cairo_translate(cr, x, y);
+    cairo_scale(cr, (double)dir * scale, scale);
+
+    double alpha = 0.62 * alpha_mult;
+    cairo_set_source_rgba(cr, 0.82, 0.72, 0.62, alpha);
+
+    // Squat rounded shell.
+    cairo_move_to(cr, -16, 2);
+    cairo_curve_to(cr, -14, -10, 2, -14, 14, -8);
+    cairo_curve_to(cr, 20, -5, 20, 4, 14, 8);
+    cairo_curve_to(cr, 0, 12, -14, 10, -16, 2);
+    cairo_close_path(cr);
+    cairo_fill(cr);
+
+    // A faint ember-glow underlight, the theme's real signature detail.
+    cairo_set_source_rgba(cr, 1.0, 0.45, 0.15, 0.25 * alpha_mult);
+    cairo_arc(cr, 0, 6, 14, 0, 2 * M_PI);
+    cairo_fill(cr);
+
+    // Short stalked eyes.
+    cairo_set_source_rgba(cr, 0.82, 0.72, 0.62, alpha);
+    cairo_move_to(cr, 10, -8); cairo_line_to(cr, 14, -13); cairo_set_line_width(cr, 2.0); cairo_stroke(cr);
+    cairo_set_source_rgba(cr, 0.15, 0.10, 0.08, alpha_mult * 0.8);
+    cairo_arc(cr, 14, -13, 1.8, 0, 2 * M_PI);
+    cairo_fill(cr);
+
+    // Stubby fuzzy claws, snapping open and shut with the walk cycle.
+    double snap = 0.35 + 0.25 * sin(t * 4.5);
+    cairo_set_source_rgba(cr, 0.86, 0.78, 0.68, alpha);
+    for (int side = -1; side <= 1; side += 2) {
+        cairo_save(cr);
+        cairo_translate(cr, 14, side * 7);
+        cairo_rotate(cr, side * 0.25);
+        cairo_move_to(cr, 0, 0);
+        cairo_curve_to(cr, 5, -5, 11, -5, 14, -side * snap * 5);
+        cairo_curve_to(cr, 11, 5, 5, 5, 0, 0);
+        cairo_close_path(cr);
+        cairo_fill(cr);
+        // A little fuzz texture along the claw edge.
+        for (int f = 0; f < 3; f++) {
+            double fx = 3 + f * 3.0;
+            cairo_move_to(cr, fx, -1);
+            cairo_line_to(cr, fx + 1.5, -4 - f * 0.5);
+            cairo_set_line_width(cr, 1.0);
+            cairo_stroke(cr);
+        }
+        cairo_restore(cr);
+    }
+
+    // Short walking legs, alternating.
+    cairo_set_source_rgba(cr, 0.80, 0.70, 0.60, alpha);
+    cairo_set_line_width(cr, 2.2);
+    for (int i = 0; i < 3; i++) {
+        double lx = -6 - i * 5.0;
+        double lift = sin(t * 7.0 + i * 2.0) * 2.5;
+        cairo_move_to(cr, lx, 5);
+        cairo_line_to(cr, lx - 3, 10 + lift);
+        cairo_stroke(cr);
+    }
+
+    cairo_restore(cr);
+}
+
+// The volcanic-zone guest: a pair of vent crabs scuttling among the
+// chimneys together, so "vent crabs" reads as plural rather than a lone
+// straggler - same idea as the penguin waddle and lobster pair.
+static void ff_draw_ventcrab_group(cairo_t *cr, double x, double y, double t, int dir, double alpha_mult) {
+    if (alpha_mult <= 0.0) return;
+    static const double off_x[2] = {0.0, -44.0};
+    static const double off_y[2] = {0.0, 4.0};
+    static const double scale[2] = {1.0, 0.85};
+
+    for (int i = 0; i < 2; i++) {
+        double px = x + dir * off_x[i];
+        double py = y + off_y[i];
+        ff_draw_ventcrab_single(cr, px, py, t + i * 0.4, dir, alpha_mult, scale[i]);
+    }
+}
+
+// (Re)builds the cached static-layer surfaces for all twelve themes if they
 // haven't been built yet, or if the canvas size has changed since they
 // were (this file's canvas is normally a fixed GAME_W x GAME_H, but it's
 // also reused as-is by zenamp's visualizer, so this is a size check rather
@@ -2314,6 +2410,9 @@ void draw_floppy_fish(Visualizer *vis, cairo_t *cr) {
                 break;
             case FF_GUEST_ALLIGATORS:
                 ff_draw_alligator_group(cr, s_ff_guest_x, s_ff_guest_y, vis->time_offset, s_ff_guest_dir, guest_alpha);
+                break;
+            case FF_GUEST_VENTCRABS:
+                ff_draw_ventcrab_group(cr, s_ff_guest_x, s_ff_guest_y, vis->time_offset, s_ff_guest_dir, guest_alpha);
                 break;
             default:
                 ff_draw_diver(cr, s_ff_guest_x, s_ff_guest_y, vis->time_offset, s_ff_guest_dir, guest_alpha);
