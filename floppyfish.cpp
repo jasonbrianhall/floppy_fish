@@ -1262,9 +1262,72 @@ void update_floppy_fish(Visualizer *vis, double dt) {
 #endif
 }
 
+// A little birthday-style party hat: a striped cone with a fluffy pom-pom
+// tip and a scalloped brim, tilted rakishly forward over the eye. Drawn in
+// the fish's own local space (so it rides along with rotation/flap) by
+// ff_draw_fish, faded in/out by party_hat_amount as the fish crosses
+// into/out of a FF_THEME_PARTY zone (see draw_floppy_fish).
+static void ff_draw_party_hat_on_fish(cairo_t *cr, double radius, double alpha) {
+    if (alpha <= 0.0) return;
+    cairo_save(cr);
+    cairo_translate(cr, radius * 0.45, -radius * 0.92);
+    cairo_rotate(cr, -0.30);
+
+    double hh = radius * 1.15, hw = radius * 0.6;
+
+    // Cone, shaded top-to-bottom so it reads as a solid party hat rather
+    // than a flat triangle.
+    cairo_pattern_t *cone = cairo_pattern_create_linear(0, 0, 0, -hh);
+    cairo_pattern_add_color_stop_rgba(cone, 0.0, 0.98, 0.20, 0.55, alpha);
+    cairo_pattern_add_color_stop_rgba(cone, 1.0, 0.30, 0.80, 0.95, alpha);
+    cairo_move_to(cr, -hw * 0.5, 0);
+    cairo_line_to(cr, hw * 0.5, 0);
+    cairo_line_to(cr, 0, -hh);
+    cairo_close_path(cr);
+    cairo_set_source(cr, cone);
+    cairo_fill_preserve(cr);
+    cairo_pattern_destroy(cone);
+    cairo_set_source_rgba(cr, 0, 0, 0, 0.3 * alpha);
+    cairo_set_line_width(cr, fmax(1.0, radius * 0.03));
+    cairo_stroke(cr);
+
+    // A couple of rows of polka dots, clipped to the cone.
+    cairo_save(cr);
+    cairo_move_to(cr, -hw * 0.5, 0);
+    cairo_line_to(cr, hw * 0.5, 0);
+    cairo_line_to(cr, 0, -hh);
+    cairo_close_path(cr);
+    cairo_clip(cr);
+    cairo_set_source_rgba(cr, 1.0, 0.92, 0.55, 0.9 * alpha);
+    for (int i = 0; i < 3; i++) {
+        double yy = -hh * (0.22 + 0.24 * i);
+        double ww = hw * (1.0 - (double)i / 3.5) * 0.5;
+        cairo_arc(cr, -ww * 0.45, yy, hw * 0.08, 0, 2 * M_PI);
+        cairo_fill(cr);
+        cairo_arc(cr, ww * 0.45, yy, hw * 0.08, 0, 2 * M_PI);
+        cairo_fill(cr);
+    }
+    cairo_restore(cr);
+
+    // Scalloped brim at the base.
+    cairo_set_source_rgba(cr, 0.95, 0.95, 0.85, alpha);
+    cairo_save(cr);
+    cairo_scale(cr, 1.0, 0.35);
+    cairo_arc(cr, 0, 0, hw * 0.68, 0, 2 * M_PI);
+    cairo_restore(cr);
+    cairo_fill(cr);
+
+    // Fluffy pom-pom on top.
+    cairo_set_source_rgba(cr, 1.0, 1.0, 1.0, alpha);
+    cairo_arc(cr, 0, -hh, hw * 0.22, 0, 2 * M_PI);
+    cairo_fill(cr);
+
+    cairo_restore(cr);
+}
+
 static void ff_draw_fish(cairo_t *cr, double x, double y, double radius, double rotation,
                           double flap_phase, const FFFishPalette *pal, double alpha,
-                          double blink_amount) {
+                          double blink_amount, double party_hat_amount) {
     cairo_save(cr);
     cairo_translate(cr, x, y);
     cairo_rotate(cr, rotation);
@@ -1325,6 +1388,8 @@ static void ff_draw_fish(cairo_t *cr, double x, double y, double radius, double 
     cairo_arc(cr, radius * 0.10, 0, radius * 0.14, 0, 2 * M_PI);
     cairo_fill(cr);
     cairo_restore(cr);
+
+    ff_draw_party_hat_on_fish(cr, radius, party_hat_amount * alpha);
 
     cairo_restore(cr);
 }
@@ -2288,9 +2353,13 @@ void draw_floppy_fish(Visualizer *vis, cairo_t *cr) {
         cairo_paint_with_alpha(cr, blend_t);
     }
 
-    // Fish
+    // Fish - wearing a party hat that fades in/out smoothly as the fish
+    // crosses into/out of a FF_THEME_PARTY zone, same crossfade weighting
+    // as everything else theme-dependent on screen.
+    double party_hat_amount = (theme_from == FF_THEME_PARTY ? (1.0 - blend_t) : 0.0)
+                             + (theme_to   == FF_THEME_PARTY ? blend_t        : 0.0);
     ff_draw_fish(cr, fish_x, s_ff_fish_y, fish_radius, s_ff_rotation, s_ff_flap_anim,
-                 &FF_FISH_PALETTES[s_ff_fish_palette], 1.0, s_ff_blink_progress);
+                 &FF_FISH_PALETTES[s_ff_fish_palette], 1.0, s_ff_blink_progress, party_hat_amount);
 
     // Score
     cairo_set_source_rgba(cr, 0, 0, 0, 0.35);
