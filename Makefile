@@ -45,7 +45,8 @@ SRCS = main.cpp floppyfish.cpp floppyfish_common.cpp floppyfish_galaxy.cpp \
        floppyfish_atlantis.cpp floppyfish_cave.cpp floppyfish_aquarium.cpp \
        floppyfish_reef.cpp floppyfish_ship.cpp floppyfish_sound.cpp        \
        floppyfish_rainbow.cpp floppyfish_dino.cpp floppyfish_antarctic.cpp \
-       floppyfish_swamp.cpp floppyfish_party.cpp floppyfish_volcanic.cpp
+       floppyfish_swamp.cpp floppyfish_party.cpp floppyfish_volcanic.cpp \
+       floppyfish_shark.cpp
 
 BUILD_DIR      = build
 BUILD_DIR_LINUX = $(BUILD_DIR)/linux
