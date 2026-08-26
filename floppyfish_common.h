@@ -6,7 +6,7 @@
 // (floppyfish_reef.cpp, floppyfish_ship.cpp, floppyfish_cave.cpp,
 // floppyfish_atlantis.cpp, floppyfish_rainbow.cpp, floppyfish_dino.cpp,
 // floppyfish_antarctic.cpp, floppyfish_aquarium.cpp, floppyfish_galaxy.cpp,
-// floppyfish_swamp.cpp) includes this and implements the same five-function
+// floppyfish_swamp.cpp, floppyfish_party.cpp) includes this and implements the same five-function
 // contract below; floppyfish_common.cpp holds the small dispatchers that are
 // the only code allowed to know all themes exist, and floppyfish.cpp (the
 // core) drives state/physics/UI and calls into the dispatchers.
@@ -19,11 +19,11 @@
 #define M_PI  3.14159265359
 #endif
 
-// Ten visual themes the run cycles through as the fish travels: coral
+// Eleven visual themes the run cycles through as the fish travels: coral
 // reef, a sunken pirate ship, a dark cave, the ruins of Atlantis, a
 // sky-high rainbow realm, a murky prehistoric bone-yard, the icy
-// Antarctic, a bright glass aquarium tank, outer space, and a mystical
-// mangrove swamp.
+// Antarctic, a bright glass aquarium tank, outer space, a mystical
+// mangrove swamp, and a black-lit underwater dance party.
 typedef enum {
     FF_THEME_REEF = 0, 
     FF_THEME_SHIP = 1, 
@@ -35,7 +35,8 @@ typedef enum {
     FF_THEME_AQUARIUM = 7,
     FF_THEME_GALAXY = 8, 
     FF_THEME_SWAMP = 9,
-    FF_THEME_COUNT = 10
+    FF_THEME_PARTY = 10,
+    FF_THEME_COUNT = 11
 } FFTheme;
 
 // Cheap deterministic pseudo-random hash - same input always gives the same
@@ -62,6 +63,7 @@ void ff_draw_antarctic_column(cairo_t *cr, double x, double y0, double y1, doubl
 void ff_draw_aquarium_column(cairo_t *cr, double x, double y0, double y1, double width, double seed, bool tip_at_y1);
 void ff_draw_galaxy_column(cairo_t *cr, double x, double y0, double y1, double width, double seed, bool tip_at_y1);
 void ff_draw_swamp_column(cairo_t *cr, double x, double y0, double y1, double width, double seed, bool tip_at_y1);
+void ff_draw_party_column(cairo_t *cr, double x, double y0, double y1, double width, double seed, bool tip_at_y1);
 
 // --- Per-theme sky --------------------------------------------------------
 // Gradient top/bottom color and ambient-particle color+alpha for the theme.
@@ -77,6 +79,7 @@ void ff_antarctic_sky_colors(double *top_r, double *top_g, double *top_b, double
 void ff_aquarium_sky_colors(double *top_r, double *top_g, double *top_b, double *bot_r, double *bot_g, double *bot_b);
 void ff_galaxy_sky_colors(double *top_r, double *top_g, double *top_b, double *bot_r, double *bot_g, double *bot_b);
 void ff_swamp_sky_colors(double *top_r, double *top_g, double *top_b, double *bot_r, double *bot_g, double *bot_b);
+void ff_party_sky_colors(double *top_r, double *top_g, double *top_b, double *bot_r, double *bot_g, double *bot_b);
 
 void ff_reef_particle_color(double *r, double *g, double *b, double *a);
 void ff_ship_particle_color(double *r, double *g, double *b, double *a);
@@ -88,6 +91,7 @@ void ff_antarctic_particle_color(double *r, double *g, double *b, double *a);
 void ff_aquarium_particle_color(double *r, double *g, double *b, double *a);
 void ff_galaxy_particle_color(double *r, double *g, double *b, double *a);
 void ff_swamp_particle_color(double *r, double *g, double *b, double *a);
+void ff_party_particle_color(double *r, double *g, double *b, double *a);
 
 // Distant skyline/backdrop silhouette drawn along the floor line (base_y).
 void ff_draw_reef_backdrop(cairo_t *cr, double w, double h, double base_y);
@@ -100,6 +104,7 @@ void ff_draw_antarctic_backdrop(cairo_t *cr, double w, double h, double base_y);
 void ff_draw_aquarium_backdrop(cairo_t *cr, double w, double h, double base_y);
 void ff_draw_galaxy_backdrop(cairo_t *cr, double w, double h, double base_y);
 void ff_draw_swamp_backdrop(cairo_t *cr, double w, double h, double base_y);
+void ff_draw_party_backdrop(cairo_t *cr, double w, double h, double base_y);
 
 // --- Per-theme floor --------------------------------------------------------
 // Split into a static part (base fill plus any non-scrolling decoration -
@@ -120,6 +125,7 @@ void ff_draw_antarctic_floor_static(cairo_t *cr, double w, double h, double floo
 void ff_draw_aquarium_floor_static(cairo_t *cr, double w, double h, double floor_h);
 void ff_draw_galaxy_floor_static(cairo_t *cr, double w, double h, double floor_h);
 void ff_draw_swamp_floor_static(cairo_t *cr, double w, double h, double floor_h);
+void ff_draw_party_floor_static(cairo_t *cr, double w, double h, double floor_h);
 
 void ff_draw_reef_floor_scroll(cairo_t *cr, double w, double h, double floor_h, double bubble_phase);
 void ff_draw_ship_floor_scroll(cairo_t *cr, double w, double h, double floor_h, double bubble_phase);
@@ -131,6 +137,7 @@ void ff_draw_antarctic_floor_scroll(cairo_t *cr, double w, double h, double floo
 void ff_draw_aquarium_floor_scroll(cairo_t *cr, double w, double h, double floor_h, double bubble_phase);
 void ff_draw_galaxy_floor_scroll(cairo_t *cr, double w, double h, double floor_h, double bubble_phase);
 void ff_draw_swamp_floor_scroll(cairo_t *cr, double w, double h, double floor_h, double bubble_phase);
+void ff_draw_party_floor_scroll(cairo_t *cr, double w, double h, double floor_h, double bubble_phase);
 
 // --- Per-theme floor decoration clump (seaweed/rope/crystals/kelp) --------
 // x/base_y/height/t match the slot shared across themes so the same patch
@@ -145,6 +152,7 @@ void ff_draw_antarctic_seaweed(cairo_t *cr, double x, double base_y, double heig
 void ff_draw_aquarium_seaweed(cairo_t *cr, double x, double base_y, double height, double t, double alpha_mult);
 void ff_draw_galaxy_seaweed(cairo_t *cr, double x, double base_y, double height, double t, double alpha_mult);
 void ff_draw_swamp_seaweed(cairo_t *cr, double x, double base_y, double height, double t, double alpha_mult);
+void ff_draw_party_seaweed(cairo_t *cr, double x, double base_y, double height, double t, double alpha_mult);
 
 // --- Dispatchers (floppyfish_common.cpp) -----------------------------------
 // The only functions that need to know all FF_THEME_COUNT themes exist.

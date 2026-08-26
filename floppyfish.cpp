@@ -34,18 +34,19 @@
 // floppyfish_reef.cpp / floppyfish_ship.cpp / floppyfish_cave.cpp /
 // floppyfish_atlantis.cpp / floppyfish_rainbow.cpp / floppyfish_dino.cpp /
 // floppyfish_antarctic.cpp / floppyfish_aquarium.cpp / floppyfish_galaxy.cpp /
-// floppyfish_swamp.cpp (see floppyfish_common.h for the shared contract).
-// This file owns everything theme-agnostic: game state, physics, collision,
-// background critters, the player fish, and the UI.
+// floppyfish_swamp.cpp / floppyfish_party.cpp (see floppyfish_common.h for
+// the shared contract). This file owns everything theme-agnostic: game
+// state, physics, collision, background critters, the player fish, and the
+// UI.
 
 #define FF_MAX_PIPES 8
 #define FF_BG_FISH_COUNT 7
 
-// Ten visual themes the run cycles through as the fish travels: coral
+// Eleven visual themes the run cycles through as the fish travels: coral
 // reef, a sunken pirate ship, a dark cave, the ruins of Atlantis, a
 // sky-high rainbow realm, a murky prehistoric bone-yard, the icy
-// Antarctic, a bright glass aquarium tank, outer space, and a mystical
-// mangrove swamp.
+// Antarctic, a bright glass aquarium tank, outer space, a mystical
+// mangrove swamp, and a black-lit underwater dance party.
 // s_ff_world_x is the total scroll distance covered so far (reset each run,
 // paused unless actively playing) and picks which theme zone the camera is
 // currently in. Zone length and the crossfade band between zones are both
@@ -497,8 +498,8 @@ static cairo_font_face_t *s_ff_font_face = NULL;
 // ff_ensure_theme_caches. Everything that actually animates (bubbles, sand
 // ripples, etc.) still gets drawn live on top of these every frame; only
 // the expensive full-canvas painting gets reused instead of redone.
-static cairo_surface_t *s_ff_sky_cache[FF_THEME_COUNT] = {NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL};
-static cairo_surface_t *s_ff_floor_cache[FF_THEME_COUNT] = {NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL};
+static cairo_surface_t *s_ff_sky_cache[FF_THEME_COUNT] = {NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL};
+static cairo_surface_t *s_ff_floor_cache[FF_THEME_COUNT] = {NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL};
 static double s_ff_cache_w = -1.0, s_ff_cache_h = -1.0; // canvas size the caches above were built for
 static void ff_free_theme_caches(); // defined near draw_floppy_fish, used by shutdown below
 
@@ -2126,7 +2127,7 @@ static void ff_draw_alligator_group(cairo_t *cr, double x, double y, double t, i
     }
 }
 
-// (Re)builds the cached static-layer surfaces for all ten themes if they
+// (Re)builds the cached static-layer surfaces for all eleven themes if they
 // haven't been built yet, or if the canvas size has changed since they
 // were (this file's canvas is normally a fixed GAME_W x GAME_H, but it's
 // also reused as-is by zenamp's visualizer, so this is a size check rather
