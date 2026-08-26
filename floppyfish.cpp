@@ -2494,6 +2494,10 @@ static void ff_ensure_theme_caches(double w, double h, double floor_h) {
 // contract in floppyfish_common.h (no other theme needs a live-animated
 // backdrop layer), so it's declared directly here rather than dispatched.
 extern void ff_draw_shark_bg_shiver_live(cairo_t *cr, double w, double h, double base_y, double bubble_phase);
+// Defined in floppyfish_antarctic.cpp, same reasoning as the shark shiver
+// above - the whale needs to actually move, so it can't be baked into the
+// cached backdrop like the rest of that theme's scenery.
+extern void ff_draw_antarctic_whale_live(cairo_t *cr, double w, double h, double base_y, double bubble_phase);
 
 void draw_floppy_fish(Visualizer *vis, cairo_t *cr) {
     if (vis->width <= 0 || vis->height <= 0) return;
@@ -2528,11 +2532,14 @@ void draw_floppy_fish(Visualizer *vis, cairo_t *cr) {
     // The shark-territory background shiver is animated, unlike the cached
     // skyline it sits in front of, so it's drawn live here too rather than
     // baked into ff_draw_shark_backdrop - see ff_draw_shark_bg_shiver_live
-    // in floppyfish_shark.cpp. Not part of the shared theme contract (only
-    // this theme has it), hence the direct theme check instead of a
-    // dispatcher call.
+    // in floppyfish_shark.cpp. Same story for the Antarctic whale. Neither
+    // is part of the shared theme contract (only these two themes need
+    // it), hence the direct theme checks instead of a dispatcher call.
     if (theme_from == FF_THEME_SHARK) {
         ff_draw_shark_bg_shiver_live(cr, w, h, base_y, s_ff_bubble_phase);
+    }
+    if (theme_from == FF_THEME_ANTARCTIC) {
+        ff_draw_antarctic_whale_live(cr, w, h, base_y, s_ff_bubble_phase);
     }
     if (blend_t > 0.0) {
         cairo_push_group(cr);
@@ -2541,6 +2548,9 @@ void draw_floppy_fish(Visualizer *vis, cairo_t *cr) {
         ff_draw_theme_particles(cr, theme_to, w, h, s_ff_bubble_phase);
         if (theme_to == FF_THEME_SHARK) {
             ff_draw_shark_bg_shiver_live(cr, w, h, base_y, s_ff_bubble_phase);
+        }
+        if (theme_to == FF_THEME_ANTARCTIC) {
+            ff_draw_antarctic_whale_live(cr, w, h, base_y, s_ff_bubble_phase);
         }
         cairo_pop_group_to_source(cr);
         cairo_paint_with_alpha(cr, blend_t);
