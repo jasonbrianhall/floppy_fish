@@ -160,6 +160,7 @@ static FFPipe s_ff_pipes[FF_MAX_PIPES];
 static double s_ff_spawn_timer = 0.0;
 static int s_ff_score = 0;
 static int s_ff_best_score = 0;      // "today's" best - persisted, but expires at local midnight (see ff_load_daily_best)
+static int s_ff_session_best = 0;    // best score since this process launched - never persisted, resets on every restart
 
 // Score thresholds for the trinket shown on the Game Over screen - below
 // sea shell is "no trinket", then each tier takes real, escalating skill.
@@ -815,6 +816,7 @@ static void ff_init_background(Visualizer *vis) {
 
 void init_floppy_fish_system(Visualizer *vis) {
     s_ff_best_score = 0;
+    s_ff_session_best = 0;
 #ifdef FLOPPYSOUND
     ff_load_alltime_best();
     ff_load_daily_best(); // overrides s_ff_best_score above if today's save is still valid
@@ -1232,7 +1234,11 @@ void update_floppy_fish(Visualizer *vis, double dt) {
                 // Demo-mode runs still tick the on-screen score up (so the
                 // attract loop looks alive), but never touch the persisted
                 // daily/all-time records - those should only reflect a
-                // real player's runs.
+                // real player's runs. The session best is never persisted
+                // either way, but stays consistent with the same rule.
+                if (!s_ff_demo_mode && s_ff_score > s_ff_session_best) {
+                    s_ff_session_best = s_ff_score;
+                }
                 if (!s_ff_demo_mode && s_ff_score > s_ff_best_score) {
                     s_ff_best_score = s_ff_score;
                     printf("New best score today: %d\n", s_ff_best_score);
@@ -2741,7 +2747,7 @@ void draw_floppy_fish(Visualizer *vis, cairo_t *cr) {
         cairo_show_text(cr, msg);
 
         cairo_set_font_size(cr, h * 0.032);
-        char best_text[64];
+        char best_text[128];
         const char *medal = ff_medal_for_score(s_ff_score);
         double score_y = h * 0.48;
         if (strcmp(medal, "None") == 0) {
@@ -2763,10 +2769,11 @@ void draw_floppy_fish(Visualizer *vis, cairo_t *cr) {
         }
 
 #ifdef FLOPPYSOUND
-        snprintf(best_text, sizeof(best_text), "Today's Best: %d   All-Time Best: %d",
-                 s_ff_best_score, s_ff_alltime_best);
+        snprintf(best_text, sizeof(best_text), "Session Best: %d   Today's Best: %d   All-Time Best: %d",
+                 s_ff_session_best, s_ff_best_score, s_ff_alltime_best);
 #else
-        snprintf(best_text, sizeof(best_text), "Today's Best: %d", s_ff_best_score);
+        snprintf(best_text, sizeof(best_text), "Session Best: %d   Today's Best: %d",
+                 s_ff_session_best, s_ff_best_score);
 #endif
         cairo_text_extents(cr, best_text, &ext);
         cairo_move_to(cr, w * 0.5 - ext.width * 0.5, h * 0.54);
