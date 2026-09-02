@@ -52,7 +52,7 @@ jobs:
           ImageMagick \
           xxd
 
-    - name: Build Windows Executable
+    - name: Build Windows Executable (mingw)
       run: |
         make windows
 
