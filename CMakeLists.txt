@@ -37,10 +37,14 @@ endif()
 # Windows: Visual Studio (MSVC)
 # ---------------------------------------------------------
 if(MSVC)
-    # SDL2
+    # SDL2 ships a proper CMake config via vcpkg
     find_package(SDL2 REQUIRED CONFIG)
-    # Cairo (you may need a custom FindCairo.cmake)
-    find_package(Cairo REQUIRED)
+    # Cairo's vcpkg port only ships pkg-config files (no CMake config),
+    # so use PkgConfig here too -- this works for both x64-windows and
+    # arm64-windows vcpkg triplets as long as CMAKE_TOOLCHAIN_FILE points
+    # at vcpkg.cmake (vcpkg supplies pkgconf.exe automatically).
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(CAIRO REQUIRED IMPORTED_TARGET cairo)
 endif()
 
 # ---------------------------------------------------------
@@ -98,12 +102,12 @@ if(MSVC)
 
     target_link_libraries(floppyfish PRIVATE
         SDL2::SDL2 SDL2::SDL2main
-        Cairo::Cairo
+        PkgConfig::CAIRO
     )
 
     target_link_libraries(floppyfish_debug PRIVATE
         SDL2::SDL2 SDL2::SDL2main
-        Cairo::Cairo
+        PkgConfig::CAIRO
     )
 endif()
 
