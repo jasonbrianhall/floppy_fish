@@ -19,6 +19,7 @@ on:
       - '**/Makefile'
       - '**.yml'
       - '**.yaml'
+      - 'CMakeLists.txt'
   workflow_dispatch:
 
 env:
