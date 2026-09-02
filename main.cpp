@@ -21,6 +21,7 @@ static const int INIT_WIN_W = 480;
 static const int INIT_WIN_H = 270; // 16:9, matches GAME_W/GAME_H
 
 extern SDL_AudioDeviceID g_audio_dev;
+extern bool g_ff_nochaos;
 
 /*
 // A short, squishy "thud" when the floppy fish dies.
@@ -54,6 +55,13 @@ static SDL_Rect compute_dest_rect(int win_w, int win_h) {
 }
 
 int main(int argc, char **argv) {
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--nochaos") == 0) {
+            g_ff_nochaos = true;
+            printf("Floppy Fish: --nochaos - attract-mode autopilot will play flawlessly\n");
+        }
+    }
+
     srand((unsigned)time(NULL));
 
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) != 0) {
@@ -83,6 +91,21 @@ int main(int argc, char **argv) {
     cairo_surface_t *surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, GAME_W, GAME_H);
     SDL_Texture *texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888,
                                               SDL_TEXTUREACCESS_STREAMING, GAME_W, GAME_H);
+    // draw_floppy_fish always paints the whole canvas opaque (the sky+floor
+    // gradients cover every pixel before anything translucent is drawn on
+    // top of them, and Cairo's OVER compositing keeps the destination
+    // alpha at 1.0 regardless), so this texture's alpha channel is never
+    // meaningful and SDL shouldn't blend with it. Left at the default
+    // SDL_BLENDMODE_BLEND, SDL_RenderCopy blends into the window using
+    // whatever's in that channel - on the Windows D3D9/D3D11 renderer
+    // backends this can end up not round-tripping cleanly through the
+    // streaming texture, and on a desktop-composited (DWM) window that
+    // reads as the real desktop showing through wherever the channel came
+    // out less than fully opaque. Doesn't happen on Linux, where SDL uses
+    // the OpenGL backend instead. Forcing NONE makes the copy just replace
+    // pixels outright, which is what we want for an opaque full-canvas
+    // blit anyway.
+    SDL_SetTextureBlendMode(texture, SDL_BLENDMODE_NONE);
 
     int win_w = INIT_WIN_W, win_h = INIT_WIN_H;
     SDL_GetWindowSize(window, &win_w, &win_h);

@@ -143,6 +143,11 @@ static FFState s_ff_state = FF_READY;
 // draw_floppy_fish), like a classic arcade demo loop. Any keyboard key (or
 // a click) ends it and hands control back to the player.
 static bool s_ff_demo_mode = true;
+
+// Set from the command line (--nochaos). Keeps the attract-mode bot playing
+// flawlessly forever - useful for recording clean b-roll/demo video without
+// waiting on a random near-miss death.
+bool g_ff_nochaos = false;
 static double s_ff_fish_y = 0.0;
 static double s_ff_fish_vel = 0.0;
 static double s_ff_rotation = 0.0;
@@ -848,6 +853,62 @@ static void ff_flap(Visualizer *vis) {
 #endif
 }
 
+// --- Attract-mode autopilot helpers ----------------------------------------
+
+// Picks the nearest active pipe still ahead of the fish and returns its
+// gap center as the aim point (mid-screen, with no pipe found, if none is
+// in view yet). Returns the pipe's index, or -1 if none was found.
+static int ff_demo_pick_target(Visualizer *vis, double pipe_width, double fish_x,
+                                double *out_target_y) {
+    double target_y = vis->height * 0.45;
+    double best_dx = 1e18;
+    int target_pipe = -1;
+    for (int i = 0; i < FF_MAX_PIPES; i++) {
+        if (!s_ff_pipes[i].active) continue;
+        double pipe_right = s_ff_pipes[i].x + pipe_width;
+        if (pipe_right < fish_x) continue; // already passed
+        double dx = s_ff_pipes[i].x - fish_x;
+        if (dx < best_dx) {
+            best_dx = dx;
+            target_y = s_ff_pipes[i].gap_center;
+            target_pipe = i;
+        }
+    }
+    *out_target_y = target_y;
+    return target_pipe;
+}
+
+// Attract-mode is otherwise a flawless bot that would just fly forever,
+// which looks dead/robotic on a showroom floor. Past a warm-up score it
+// starts to get sloppy, tuned so a run's median death lands around score
+// 50: aim error and reaction bias both grow with the score (see
+// ff_demo_apply_chaos below), giving a rising chance of ending in a
+// believable near-miss instead of playing until the sun dies. Returns 0
+// (flawless) to 1 (max sloppiness) for the current score; always 0 when
+// --nochaos was passed on the command line, for recording clean video.
+static double ff_demo_chaos_level(void) {
+    if (g_ff_nochaos) return 0.0;
+    const double chaos_start = 42.0; // score where sloppiness begins
+    const double chaos_ramp  = 18.0; // additional points until it's maxed out (~score 60)
+    double chaos = (s_ff_score - chaos_start) / chaos_ramp;
+    if (chaos < 0.0) chaos = 0.0;
+    if (chaos > 1.0) chaos = 1.0;
+    return chaos;
+}
+
+// Nudges one pipe's aim point and flap-trigger bias by an amount scaled by
+// `chaos`. Each pipe gets its own fixed error, seeded off its gap center,
+// so the wobble reads as "misjudged this particular gap" rather than
+// flickering frame to frame while the fish approaches it.
+static void ff_demo_apply_chaos(double chaos, int target_pipe, double vis_h,
+                                 double *target_y, double *bias) {
+    if (chaos <= 0.0 || target_pipe < 0) return;
+    double err = ff_hash(s_ff_pipes[target_pipe].gap_center * 0.017 + target_pipe * 9.13) - 0.5;
+    *target_y += err * 2.0 * chaos * vis_h * 0.16;
+    double bias_err = ff_hash(s_ff_pipes[target_pipe].gap_center * 0.029 + target_pipe * 3.71) - 0.5;
+    *bias *= (1.0 + bias_err * 1.6 * chaos);
+}
+
 // Renders both columns of a pipe (top + bottom, given its fixed gap_center
 // and theme) into a fresh offscreen surface sized to the canvas height and
 // one pipe's width, at local x=0. Called once per pipe at spawn time; the
@@ -1090,23 +1151,11 @@ void update_floppy_fish(Visualizer *vis, double dt) {
                 s_ff_demo_restart_delay -= dt;
                 if (s_ff_demo_restart_delay <= 0.0) {
                     want_flap = true;
-                    s_ff_demo_restart_delay = 1.4;
+                    s_ff_demo_restart_delay = 3.0;
                 }
             } else if (s_ff_state == FF_PLAYING) {
-                // Aim for the gap center of the nearest pipe still ahead of
-                // the fish; default to mid-screen when none is in view yet.
-                double target_y = vis->height * 0.45;
-                double best_dx = 1e18;
-                for (int i = 0; i < FF_MAX_PIPES; i++) {
-                    if (!s_ff_pipes[i].active) continue;
-                    double pipe_right = s_ff_pipes[i].x + pipe_width;
-                    if (pipe_right < fish_x) continue; // already passed
-                    double dx = s_ff_pipes[i].x - fish_x;
-                    if (dx < best_dx) {
-                        best_dx = dx;
-                        target_y = s_ff_pipes[i].gap_center;
-                    }
-                }
+                double target_y;
+                int target_pipe = ff_demo_pick_target(vis, pipe_width, fish_x, &target_y);
 
                 // A plain "flap while below target" bang-bang looks right
                 // but isn't: because ff_flap sets velocity to a fixed
@@ -1120,6 +1169,10 @@ void update_floppy_fish(Visualizer *vis, double dt) {
                 // centered on the gap instead of consistently clipping its
                 // ceiling.
                 double bias = vis->height * 0.043;
+
+                double chaos = ff_demo_chaos_level();
+                ff_demo_apply_chaos(chaos, target_pipe, vis->height, &target_y, &bias);
+
                 if (s_ff_fish_y > target_y + bias) want_flap = true;
             }
 
@@ -2672,6 +2725,25 @@ void draw_floppy_fish(Visualizer *vis, cairo_t *cr) {
     }
     cairo_set_font_face(cr, s_ff_font_face);
     cairo_set_font_size(cr, h * 0.08);
+
+    // Force plain grayscale antialiasing for all HUD/title text drawn
+    // below. Left at Cairo's default, the win32 font backend renders toy
+    // fonts with ClearType-style subpixel antialiasing tuned for
+    // compositing straight onto a physical screen; since this canvas is
+    // an offscreen ARGB32 surface that gets scaled and blitted into an
+    // SDL texture rather than drawn to a window directly, those subpixel
+    // color fringes don't reconstruct correctly and the text comes out
+    // washed-out/grey instead of solid white - only on the MSVC/win32
+    // build, since the Linux freetype/fontconfig backend already
+    // defaults to grayscale. Cheap enough to just set every frame rather
+    // than caching it on the font face.
+    {
+        cairo_font_options_t *fo = cairo_font_options_create();
+        cairo_font_options_set_antialias(fo, CAIRO_ANTIALIAS_GRAY);
+        cairo_set_font_options(cr, fo);
+        cairo_font_options_destroy(fo);
+    }
+
     char score_text[16];
     snprintf(score_text, sizeof(score_text), "%d", s_ff_score);
     cairo_text_extents_t ext;
@@ -2684,6 +2756,11 @@ void draw_floppy_fish(Visualizer *vis, cairo_t *cr) {
     cairo_move_to(cr, sx, sy);
     cairo_show_text(cr, score_text);
 
+    // Shown for the whole attract-mode loop (title overlaid on the bot's
+    // live autoplay behind it, like a classic arcade attract screen), plus
+    // the idle "waiting to start" moment for a real player who hasn't
+    // clicked yet. Never true once a real player is actually mid-run:
+    // demo_mode is off by then and state is FF_PLAYING, not FF_READY.
     if (s_ff_demo_mode || s_ff_state == FF_READY) {
         // Welcome to Floppy Fish
         cairo_set_source_rgba(cr, 1.0, 1.0, 1.0, 0.95);
