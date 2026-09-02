@@ -8,6 +8,8 @@ on:
       - '**.h'
       - 'Makefile'
       - '**/Makefile'
+      - 'CMakeLists.txt'
+      - 'vcpkg.json'
       - '**.yml'
       - '**.yaml'
   pull_request:
@@ -17,6 +19,8 @@ on:
       - '**.h'
       - 'Makefile'
       - '**/Makefile'
+      - 'CMakeLists.txt'
+      - 'vcpkg.json'
       - '**.yml'
       - '**.yaml'
   workflow_dispatch:
@@ -26,99 +30,21 @@ env:
   UPGRADE_CODE: "83b0a2d6-d079-44cd-af56-29888c5cb05d"
 
 jobs:
-  build-linux:
-    runs-on: ubuntu-latest
-    container:
-      image: fedora:43
-    outputs:
-      version: ${{ env.PRODUCT_VERSION }}
-
-    steps:
-    - uses: actions/checkout@v4
-
-    - name: Install Dependencies
-      run: |
-        dnf -y install \
-          gcc gcc-c++ make \
-          SDL2-devel \
-          cairo-devel \
-          pkg-config \
-          mingw64-gcc mingw64-gcc-c++ \
-          mingw64-pkg-config \
-          mingw64-SDL2 \
-          mingw64-cairo \
-          wine \
-          zip unzip \
-          ImageMagick \
-          xxd
-
-    - name: Build Windows Executable
-      run: |
-        make windows
-
-    - name: Convert PNG Icon to ICO Format
-      working-directory: build/windows
-      run: |
-        if [ -f "../../icon.png" ]; then
-          echo "Converting icon.png to icon.ico..."
-          convert ../../icon.png -resize 256x256 -colors 256 icon.ico
-          echo "✅ Icon converted successfully"
-          ls -lh icon.ico
-        else
-          echo "⚠️  icon.png not found at repo root"
-        fi
-
-    - name: Prepare Build Artifacts
-      working-directory: build/windows
-      run: |
-        cp ../../README.md . 2>/dev/null || true
-        cp ../../LICENSE.md . 2>/dev/null || true
-        cp ../../icon.png . 2>/dev/null || true
-
-        if [ ! -f "floppyfish.exe" ]; then
-          echo "❌ floppyfish.exe not found — build failed"
-          exit 1
-        fi
-        echo "✅ floppyfish.exe found"
-
-        DLL_SOURCE="/usr/x86_64-w64-mingw32/sys-root/mingw/bin"
-
-        for dll in \
-          libgcc_s_seh-1.dll \
-          libstdc++-6.dll \
-          libwinpthread-1.dll \
-          SDL2.dll \
-          libcairo-2.dll \
-          libpixman-1-0.dll \
-          libpng16-16.dll \
-          libfreetype-6.dll \
-          libfontconfig-1.dll \
-          libexpat-1.dll \
-          zlib1.dll; do
-          if [ -f "$DLL_SOURCE/$dll" ]; then
-            cp "$DLL_SOURCE/$dll" .
-          else
-            echo "⚠️  $dll not found at $DLL_SOURCE"
-          fi
-        done
-
-        echo "📦 Portable package contents:"
-        ls -lh *.exe *.dll 2>/dev/null || true
-
-        zip -r ../../FloppyFish-Portable.zip ./*
-
-    - name: Upload Build Artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: floppy-fish-build
-        path: FloppyFish-Portable.zip
-        retention-days: 7
-
-  build-windows-arm64:
-    needs: build-linux
+  build-windows:
     runs-on: windows-latest
-    outputs:
-      version: ${{ needs.build-linux.outputs.version }}
+    strategy:
+      matrix:
+        include:
+          - arch: x64
+            vcpkg_triplet: x64-windows
+            cmake_arch: x64
+            artifact_name: floppy-fish-build
+            zip_name: FloppyFish-Portable.zip
+          - arch: arm64
+            vcpkg_triplet: arm64-windows
+            cmake_arch: ARM64
+            artifact_name: floppy-fish-build-arm64
+            zip_name: FloppyFish-Portable-arm64.zip
 
     steps:
     - uses: actions/checkout@v4
@@ -128,51 +54,69 @@ jobs:
         git clone https://github.com/microsoft/vcpkg.git
         .\vcpkg\bootstrap-vcpkg.bat
 
-    - name: Install dependencies (arm64-windows)
+    - name: Install dependencies (${{ matrix.vcpkg_triplet }})
       run: |
-        .\vcpkg\vcpkg.exe install --triplet arm64-windows --x-manifest-root=. --x-install-root=vcpkg\installed
+        .\vcpkg\vcpkg.exe install --triplet ${{ matrix.vcpkg_triplet }} --x-manifest-root=. --x-install-root=vcpkg\installed
 
     - name: Install pkg-config
       run: choco install pkgconfiglite -y --no-progress
 
-    - name: Configure (MSVC cross-compiling to ARM64)
+    - name: Configure
       env:
-        PKG_CONFIG_PATH: ${{ github.workspace }}\vcpkg\installed\arm64-windows\lib\pkgconfig
+        PKG_CONFIG_PATH: ${{ github.workspace }}\vcpkg\installed\${{ matrix.vcpkg_triplet }}\lib\pkgconfig
       run: |
-        cmake -B build-arm64 -A ARM64 `
+        cmake -B build-${{ matrix.arch }} -A ${{ matrix.cmake_arch }} `
           -DCMAKE_TOOLCHAIN_FILE="${{ github.workspace }}\vcpkg\scripts\buildsystems\vcpkg.cmake" `
-          -DVCPKG_TARGET_TRIPLET=arm64-windows `
+          -DVCPKG_TARGET_TRIPLET=${{ matrix.vcpkg_triplet }} `
+          -DVCPKG_INSTALLED_DIR="${{ github.workspace }}\vcpkg\installed" `
           -DCMAKE_BUILD_TYPE=Release
 
     - name: Build
       run: |
-        cmake --build build-arm64 --config Release --target floppyfish
+        cmake --build build-${{ matrix.arch }} --config Release --target floppyfish
+
+    - name: Convert PNG icon to ICO
+      run: |
+        if (Test-Path "icon.png") {
+          magick icon.png -resize 256x256 -colors 256 icon.ico
+        } else {
+          Write-Host "⚠️  icon.png not found at repo root"
+        }
 
     - name: Package
       run: |
-        New-Item -ItemType Directory -Force -Path "package-arm64" | Out-Null
-        Copy-Item "build-arm64\Release\floppyfish.exe" "package-arm64\"
-        Copy-Item "vcpkg\installed\arm64-windows\bin\*.dll" "package-arm64\"
-        Copy-Item "README.md" "package-arm64\" -ErrorAction SilentlyContinue
-        Copy-Item "LICENSE.md" "package-arm64\" -ErrorAction SilentlyContinue
-        Copy-Item "icon.png" "package-arm64\" -ErrorAction SilentlyContinue
+        New-Item -ItemType Directory -Force -Path "package" | Out-Null
+        Copy-Item "build-${{ matrix.arch }}\Release\floppyfish.exe" "package\"
+        Copy-Item "vcpkg\installed\${{ matrix.vcpkg_triplet }}\bin\*.dll" "package\"
+        Copy-Item "README.md" "package\" -ErrorAction SilentlyContinue
+        Copy-Item "LICENSE.md" "package\" -ErrorAction SilentlyContinue
+        Copy-Item "icon.png" "package\" -ErrorAction SilentlyContinue
+        Copy-Item "icon.ico" "package\" -ErrorAction SilentlyContinue
 
-        if (-not (Test-Path "package-arm64\floppyfish.exe")) {
+        if (-not (Test-Path "package\floppyfish.exe")) {
           Write-Error "floppyfish.exe not found — build failed"
           exit 1
         }
 
-        Compress-Archive -Path "package-arm64\*" -DestinationPath "FloppyFish-Portable-arm64.zip"
+        $dllCount = (Get-ChildItem "package\*.dll" -ErrorAction SilentlyContinue).Count
+        if ($dllCount -eq 0) {
+          Write-Error "No DLLs were copied from vcpkg\installed\${{ matrix.vcpkg_triplet }}\bin — packaging would produce a broken zip"
+          exit 1
+        }
+        Write-Host "📦 Packaged $dllCount DLL(s):"
+        Get-ChildItem "package\*.dll" | ForEach-Object { Write-Host "  - $($_.Name) ($($_.Length) bytes)" }
+
+        Compress-Archive -Path "package\*" -DestinationPath "${{ matrix.zip_name }}"
 
     - name: Upload Build Artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: floppy-fish-build-arm64
-        path: FloppyFish-Portable-arm64.zip
+        name: ${{ matrix.artifact_name }}
+        path: ${{ matrix.zip_name }}
         retention-days: 7
 
   build-msi-windows:
-    needs: build-linux
+    needs: build-windows
     runs-on: windows-latest
     permissions:
       contents: write
@@ -357,7 +301,7 @@ jobs:
         retention-days: 7
 
   build-msix-windows:
-    needs: [build-linux, build-windows-arm64]
+    needs: build-windows
     runs-on: windows-latest
     permissions:
       contents: write
@@ -452,7 +396,7 @@ jobs:
           <Identity
             Name="JasonBrianHall.FloppyFish"
             Publisher="CN=7A3CF65F-504C-42F2-BABD-6A0512A0A017"
-            Version="${{ needs.build-linux.outputs.version }}"
+            Version="${{ env.PRODUCT_VERSION }}"
             ProcessorArchitecture="${{ matrix.arch }}" />
 
           <Properties>
@@ -535,7 +479,7 @@ jobs:
         retention-days: 7
 
   create-release:
-    needs: [build-linux, build-windows-arm64, build-msi-windows, build-msix-windows]
+    needs: [build-windows, build-msi-windows, build-msix-windows]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -584,7 +528,7 @@ jobs:
         body: |
           ## ${{ github.ref == 'refs/heads/main' && 'Stable Release' || 'Development Build' }}
 
-          **Version:** ${{ needs.build-linux.outputs.version }}
+          **Version:** ${{ env.PRODUCT_VERSION }}
           **Commit:** ${{ github.sha }}
           **Build:** #${{ github.run_number }}
 
