@@ -19,7 +19,6 @@ on:
       - '**/Makefile'
       - '**.yml'
       - '**.yaml'
-      - 'CMakeLists.txt'
   workflow_dispatch:
 
 env:
@@ -53,7 +52,7 @@ jobs:
           ImageMagick \
           xxd
 
-    - name: Build Windows Executable (mingw)
+    - name: Build Windows Executable
       run: |
         make windows
 
@@ -129,7 +128,16 @@ jobs:
         git clone https://github.com/microsoft/vcpkg.git
         .\vcpkg\bootstrap-vcpkg.bat
 
+    - name: Install dependencies (arm64-windows)
+      run: |
+        .\vcpkg\vcpkg.exe install --triplet arm64-windows --x-manifest-root=. --x-install-root=vcpkg\installed
+
+    - name: Install pkg-config
+      run: choco install pkgconfiglite -y --no-progress
+
     - name: Configure (MSVC cross-compiling to ARM64)
+      env:
+        PKG_CONFIG_PATH: ${{ github.workspace }}\vcpkg\installed\arm64-windows\lib\pkgconfig
       run: |
         cmake -B build-arm64 -A ARM64 `
           -DCMAKE_TOOLCHAIN_FILE="${{ github.workspace }}\vcpkg\scripts\buildsystems\vcpkg.cmake" `
