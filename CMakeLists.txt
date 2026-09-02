@@ -59,8 +59,8 @@ endif()
 # ---------------------------------------------------------
 # Executables
 # ---------------------------------------------------------
-add_executable(floppyfish ${SRCS})
-add_executable(floppyfish_debug ${SRCS})
+add_executable(floppyfish WIN32 ${SRCS})
+add_executable(floppyfish_debug WIN32 ${SRCS})
 
 # ---------------------------------------------------------
 # Linux flags
